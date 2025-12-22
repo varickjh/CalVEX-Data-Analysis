@@ -4,13 +4,13 @@ library(ggplot2)
 
 server <- function(input, output) {
   
-  # Data organization
+  # data organization
   calvex2023 <- read.csv("data/CalVEX2023.csv")
   calvex2022 <- read.csv("data/CalVEX2022.csv")
   calvex2021 <- read.csv("data/CalVEX2021.csv")
   calvex2020 <- read.csv("data/CalVEX2020.csv")
 
-  # Isolate variables we are comparing (can change later) & combine into dataset
+  # isolate variables we are comparing (can change later) & combine into dataset
   cols_needed <- c(
     "GENDER_2", 
     "LGB_2", 
@@ -31,18 +31,18 @@ server <- function(input, output) {
     calvex2020
   )
 
-  # Lookup tables / labels for graph & legend
-  # Gender labels (graph)
+  # lookup tables / labels for graph & legend
+  # gender labels (graph)
   gender_labels <- c(
     "1" = "Woman", 
     "2" = "Man"
   )
-  # Sexuality labels (graph)
+  # sexuality labels (graph)
   sexuality_labels <- c(
     "1" = "LGB/other identity",
     "2" = "Straight"
   )
-  # Age labels (graph)
+  # age labels (graph)
   age_labels <- c(
     "1" = "18–24",
     "2" = "25–34",
@@ -51,7 +51,7 @@ server <- function(input, output) {
     "5" = "55–64",
     "6" = "65+"
   )
-  # Race labels (graph)
+  # race labels (graph)
   race_labels <- c(
     "1" = "White, NH",
     "2" = "Black, NH",
@@ -59,7 +59,7 @@ server <- function(input, output) {
     "4" = "Hispanic",
     "5" = "Other/multiple races, NH"
   )
-  # Legend labels
+  # legend labels
   graph_labels <- c(
   "GENDER_2" = "GENDER_2 (Gender)",
   "AGE_6" = "AGE_6 (Age)",
@@ -67,11 +67,11 @@ server <- function(input, output) {
   "LGB_2" = "LGB_2 (Sexuality)"
   )
 
-  # Reactive subset
+  # reactive subset
 filtered_data <- reactive({
   df <- calvex_data
 
-  # Filter by demographics
+  # filter by demographics
   if (!is.null(input$GENDER_2))
     df <- df[df$GENDER_2 %in% as.numeric(input$GENDER_2), ]
   if (!is.null(input$LGB_2))
@@ -81,11 +81,11 @@ filtered_data <- reactive({
   if (!is.null(input$RACE_5))
     df <- df[df$RACE_5 %in% as.numeric(input$RACE_5), ]
 
-  # Filter by year
+  # filter by year
   if (!is.null(input$YEAR))
     df <- df[df$data_year %in% as.numeric(input$YEAR), ]
 
-  # Convert codes to labels for plotting
+  # convert codes to labels for plotting
     df$GENDER_2 <- factor(
       df$GENDER_2, 
       levels = names(gender_labels), 
@@ -112,19 +112,19 @@ filtered_data <- reactive({
 
 
 
-# Output: plot comparing violence across demographics and years
+# output: plot comparing violence across demographics and years
   output$histogram <- renderPlot({
     df <- filtered_data()
     
-    # Use selected demographic & statistics type
+    # use selected demographic & statistics type
     demographic <- input$demographic
     stat_type <- input$statistics
     violence_type <- input$violence
 
-    # Choose between physical & sexual violence
+    # choose between physical & sexual violence
     violence_col <- if (violence_type == "physical") "pv_ever" else "sv_ever"
 
-    # Summarize by year, demographic, & statistic (count & percent)
+    # summarize by year, demographic, & statistic (count & percent)
     summary_df <- df %>%
     group_by(data_year, .data[[demographic]]) %>%
     summarise(violence_count = sum(.data[[violence_col]] == 1, 
@@ -134,7 +134,7 @@ filtered_data <- reactive({
     ) %>%
     mutate(violence_percent = (violence_count / total) * 100)
 
-    # Choose between count & percent
+    # choose between count & percent
     if (stat_type == "percent") {
     summary_df <- summary_df %>%
       mutate(
@@ -154,21 +154,21 @@ filtered_data <- reactive({
       ylim_max <- max(summary_df$value, na.rm = TRUE) * 1.1
     }
 
-    # Update the title to reflect the type of violence
+    # update the title to reflect the type of violence
     v_title <- if (violence_type == "physical") "Physical Violence" else "Sexual Violence"
 
-    # Build plot
+    # build plot
     ggplot(summary_df, aes(
       x = factor(data_year), 
       y = value, 
       fill = .data[[demographic]])) +
-      # Add labels
+      # add labels
       geom_col(position = position_dodge()) +
       geom_text(
         aes(label = label), 
         vjust = -0.5, 
         position = position_dodge(width = 0.9)) +
-      # Add labels
+      # add labels
       labs(
         x = "Year",
         y = y_lab,

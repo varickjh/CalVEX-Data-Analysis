@@ -5,7 +5,7 @@ This app allows users to perform simple visual analysis with data from the [Cali
 ## Contents
 
 The folder CalVEX-Data-Analysis contains:
-- **app.R**, **server.R**, **ui.R**: These are the files that make up the app itself. **server.R** is the code for the back-end data analysis, **ui.r** is the code for the front-end user interaction, and **app.R** connects the two files together. 
+- **app.R**, **server.R**, **ui.R**: These are the files that make up the app itself. **server.R** is the code for the back-end data analysis, **ui.R** is the code for the front-end user interaction, and **app.R** connects the two files together. 
 - The ***data*** folder contains four files: **CalVEX2020.csv**, **CalVEX2021.csv**, **CalVEX2022.csv**, and **CalVEX2023.csv**. These files contain the raw data from each of the CalVEX surveys conducted in [2020](https://www.openicpsr.org/openicpsr/project/204403/version/V1/view), [2021](https://www.openicpsr.org/openicpsr/project/204402/version/V1/view), [2022](https://www.openicpsr.org/openicpsr/project/204401/version/V1/view), and [2023](https://www.openicpsr.org/openicpsr/project/199087/version/V1/view). The data in these files are unedited except for an additional column added to each entry denoting the year that the data was collected. 
 - **requirements.txt** are the libraries required to run the program on one's personal computer.
 - **.gitignore** tells git which files to ignore when connecting repositories between the programmer's local computer & the public repository (not required to use for the app itself). 

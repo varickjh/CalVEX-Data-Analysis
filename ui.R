@@ -3,20 +3,20 @@ library(bslib)
 library(markdown) # for shinyapps.io deployment
 
 ui <- page_sidebar(
-  # Page title
+  # page title
   title = "CalVEX Analysis",
 
-  # Sidebar Layout 
+  # sidebar Layout 
   sidebar = sidebar(
     
-    # Graph select violence type
+    # graph select violence type
     selectInput("violence", "Violence Type:",
       choices = list("Physical Violence" = "physical",
                   "Sexual Violence" = "sexual"),
       selected = "physical"
     ),
 
-    # Graph select demographic
+    # graph select demographic
     selectInput("demographic", "Display by Demographic:",
       choices = list("Gender" = "GENDER_2",
         "Age" = "AGE_6",
@@ -25,7 +25,7 @@ ui <- page_sidebar(
       selected = "GENDER_2"
     ),
 
-    # Graph select percentage vs. count
+    # graph select percentage vs. count
     selectInput("statistics", "Statistics Display:",
       choices = list("Percent Experiencing Violence" = "percent",
                   "Raw Number Experiencing Violence" = "count"),
@@ -33,11 +33,11 @@ ui <- page_sidebar(
     ),
 
     accordion(
-      # Accordion panel: Demographic Information
+      # accordion panel: Demographic Information
       accordion_panel(
         "Demographic Specifics",
 
-        # Checkbox selection for 2-level gender identity; GENDER_2
+        # checkbox selection for 2-level gender identity; GENDER_2
         checkboxGroupInput(
           "GENDER_2", "2-level Gender Identity:",
           choices = list(
@@ -47,7 +47,7 @@ ui <- page_sidebar(
           selected = list(1, 2)
         ),
 
-        # Checkbox selection for self-described sexuality; LGB_2
+        # checkbox selection for self-described sexuality; LGB_2
         checkboxGroupInput(
           "LGB_2", "Self-described sexuality:",
           choices = list(
@@ -57,7 +57,7 @@ ui <- page_sidebar(
           selected = list(1, 2)
         ),
 
-        # Checkbox selection for age; AGE_6
+        # checkbox selection for age; AGE_6
         checkboxGroupInput(
           "AGE_6", "Age:",
           choices = list(
@@ -71,7 +71,7 @@ ui <- page_sidebar(
           selected = list(1, 2, 3, 4, 5, 6)
         ),
 
-        # Checkbox selection for race/ethnicity; RACE_5
+        # checkbox selection for race/ethnicity; RACE_5
         checkboxGroupInput(
           "RACE_5", "Race / Ethnicity:",
           choices = list(
@@ -85,11 +85,11 @@ ui <- page_sidebar(
         )
       ),
 
-      # Accordion panel: Time & Location
+      # accordion panel: time & location
       accordion_panel(
         "Time & Location",
 
-        # Checkbox selection for year data was recorded; YEAR
+        # checkbox selection for year data was recorded; YEAR
         checkboxGroupInput(
           "YEAR", "YEAR:",
           choices = list(
@@ -106,7 +106,7 @@ ui <- page_sidebar(
   ),
   
 
-  # Main Panel
+  # main Panel
   plotOutput("histogram")
 
 )
