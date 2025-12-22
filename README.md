@@ -27,14 +27,14 @@ Once running, the app should automatically respond to the user's inputs. Select 
 
 ## TO-DO
 
-[] Put variable name for plot labeling (ex. "Gender" = "GENDER_2")
-[] Find a way to include nonbinary data for gender in 2023 (and 2025)
-[] Include statistics on intimate partner violence (as a new category underneath violence & sexual)
-[] Add different demographics (look at the demographic variables, taken in survey)
-[] Add additional factors: perpetration of violence, how else…
-[] Create advanced options viewpoint on the left hand side (Plot 1, Plot 2, etc)
-    [] Create plot (on left hand side via window, similar to Stata)
-    [] Display multiple plots side by side
-[] Add option to screenshot or download generated plot
-[] Add 2025 data (tabled?)
+- [] Put variable name for plot labeling (ex. "Gender" = "GENDER_2")
+- [] Find a way to include nonbinary data for gender in 2023 (and 2025)
+- [] Include statistics on intimate partner violence (as a new category underneath violence & sexual)
+- [] Add different demographics (look at the demographic variables, taken in survey)
+- [] Add additional factors: perpetration of violence, how else…
+- [] Create advanced options viewpoint on the left hand side (Plot 1, Plot 2, etc)
+    - [] Create plot (on left hand side via window, similar to Stata)
+    - [] Display multiple plots side by side
+- [] Add option to screenshot or download generated plot
+- [] Add 2025 data (tabled?)
 
