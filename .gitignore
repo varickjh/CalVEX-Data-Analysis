@@ -51,3 +51,8 @@ rsconnect/
 # Folders to ignore
 helper_folder/
 calvex_venv/
+CalVEX2020_Codebook.xlsx
+CalVEX2021_Codebook.xlsx
+CalVEX2022_Codebook.xlsx
+CalVEX2023_Codebook&SimpleFrequencies.xlsx
+eda.ipynb
