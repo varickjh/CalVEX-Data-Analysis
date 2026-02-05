@@ -14,6 +14,7 @@ server <- function(input, output) {
   if ("IPV22_EVER" %in% names(calvex2023)) names(calvex2023)[names(calvex2023) == "IPV22_EVER"] <- "ipv_ever" # nolint: line_length_linter.
   if ("ipv_12mo" %in% names(calvex2022)) names(calvex2022)[names(calvex2022) == "ipv_12mo"] <- "ipv_ever" # nolint: line_length_linter.
   if ("ipv_12mo" %in% names(calvex2021)) names(calvex2021)[names(calvex2021) == "ipv_12mo"] <- "ipv_ever" # nolint: line_length_linter.
+  if ("ipv_ever" %in% names(calvex2020)) names(calvex2020)[names(calvex2020) == "ipv_ever"] <- "ipv_ever" # nolint: line_length_linter.
 
   # standardize gender column names across years
   if ("Q47_T4" %in% names(calvex2023)) names(calvex2023)[names(calvex2023) == "Q47_T4"] <- "GENDER" # nolint: line_length_linter.
@@ -48,10 +49,22 @@ server <- function(input, output) {
   # Standardize gender codes for 2020, 2021, and 2022 data
   standardize_gender <- function(df) {
     df$GENDER <- as.character(df$GENDER)
-    # For 2020, 2021, 2022: "4" was Non-binary, change to "3" to match 2023
-    df$GENDER[df$GENDER == "4"] <- "3"
-    # Remove any actual "4" entries from 2020-2022 as they don't correspond to 2023's "4"
-    df <- df[!is.na(df$GENDER) & df$GENDER != "4", ]
+    
+    # Map 2020-2022 GENDER2 codes to 2023 Q47_T4 structure
+    # 2020-2022: 1=Male, 2=Female, 3=Transgender, 4=Do not identify, 77=Don't Know, 98=Skipped, 99=Refused
+    # 2023: 1=Woman, 2=Man, 3=Non-binary, 4=Prefer to self describe, 98=Prefer not to say
+    
+    # Create mapping for 2020-2022 to 2023 structure
+    df$GENDER[df$GENDER == "1"] <- "2"  # Male -> Man
+    df$GENDER[df$GENDER == "2"] <- "1"  # Female -> Woman
+    df$GENDER[df$GENDER == "3"] <- "3"  # Transgender -> Non-binary (closest match)
+    df$GENDER[df$GENDER == "4"] <- "3"  # Do not identify -> Non-binary (closest match)
+    df$GENDER[df$GENDER == "77"] <- "98" # Don't Know -> Prefer not to say
+    df$GENDER[df$GENDER == "98"] <- "98" # Skipped -> Prefer not to say
+    df$GENDER[df$GENDER == "99"] <- "98" # Refused -> Prefer not to say
+    
+    # Remove any invalid entries
+    df <- df[!is.na(df$GENDER) & df$GENDER %in% c("1", "2", "3", "4", "98"), ]
     df$GENDER <- as.numeric(df$GENDER)
     df
   }
@@ -68,7 +81,7 @@ server <- function(input, output) {
   )
 
   # lookup tables / labels for graph & legend
-  # gender labels (graph)
+  # gender labels (graph) - updated to match 2023 structure
   gender_labels <- c(
     "1" = "Woman",
     "2" = "Man",
@@ -140,6 +153,11 @@ server <- function(input, output) {
     # reactive subset
   filtered_data <- reactive({
     df <- calvex_data
+
+    # filter out 2021 and 2022 for IPV
+    if (!is.null(input$violence) && input$violence == "ipv") {
+      df <- df[!df$data_year %in% c(2021, 2022), ]
+    }
 
     # filter by demographics
     if (!is.null(input$GENDER) && length(input$GENDER) > 0)
@@ -275,5 +293,5 @@ server <- function(input, output) {
   )
 
 
-}  
+}
 

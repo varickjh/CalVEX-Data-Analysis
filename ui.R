@@ -143,16 +143,32 @@ ui <- page_sidebar(
         "Time & Location",
 
         # checkbox selection for year data was recorded; YEAR
-        checkboxGroupInput(
-          "YEAR", "YEAR:",
-          choices = list(
-            "2025" = 2025,
-            "2023" = 2023,
-            "2022" = 2022,
-            "2021" = 2021,
-            "2020" = 2020
-          ),
-          selected = list(2023, 2022, 2021, 2020)
+        conditionalPanel(
+          condition = "input.violence != 'ipv'",
+          checkboxGroupInput(
+            "YEAR", "YEAR:",
+            choices = list(
+              "2025" = 2025,
+              "2023" = 2023,
+              "2022" = 2022,
+              "2021" = 2021,
+              "2020" = 2020
+            ),
+            selected = list(2023, 2022, 2021, 2020)
+          )
+        ),
+        
+        conditionalPanel(
+          condition = "input.violence == 'ipv'",
+          checkboxGroupInput(
+            "YEAR", "YEAR:",
+            choices = list(
+              "2025" = 2025,
+              "2023" = 2023,
+              "2020" = 2020
+            ),
+            selected = list(2023, 2020)
+          )
         )
       )
     ),
