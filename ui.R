@@ -9,11 +9,20 @@ ui <- page_sidebar(
   # sidebar Layout 
   sidebar = sidebar(
     
+    # graph time selection: Lifetime or Past Year
+    selectInput("time", "Time Period:",
+      choices = list("Lifetime" = "lifetime",
+                  "Past Year" = "past_year"),
+      selected = "lifetime"
+    ),
+    
     # graph select violence type
     selectInput("violence", "Violence Type:",
       choices = list("Physical Violence" = "physical",
                   "Sexual Violence" = "sexual",
-                  "Intimate Partner Violence" = "ipv"),
+                  "Intimate Partner Violence" = "ipv",
+                  "Sexual Violence Perpetration" = "sexual_perp",
+                  "Physical Violence Perpetration" = "physical_perp"),
       selected = "physical"
     ),
 
@@ -26,7 +35,8 @@ ui <- page_sidebar(
         "Income Quintile" = "INCOME_QUINTILE",
         "Education Level" = "EDUC_4",
         "Employment Status" = "EMPLOY_2",
-        "Disability Status" = "DISABILITY"),
+        "Disability Status" = "DISABILITY",
+        "Transgender" = "TRANSGENDER"),
       selected = "GENDER"
     ),
 
@@ -35,6 +45,13 @@ ui <- page_sidebar(
       choices = list("Percent Experiencing Violence" = "percent",
                   "Raw Number Experiencing Violence" = "count"),
       selected = "percent"
+    ),
+
+    # overall toggle (applies to all demographic types)
+    checkboxInput(
+      "overall",
+      "Overall (all respondents)",
+      value = TRUE
     ),
 
     accordion(
@@ -46,10 +63,10 @@ ui <- page_sidebar(
         checkboxGroupInput(
           "GENDER", "Gender Identity:",
           choices = list(
-            "Woman" = 1,
-            "Man" = 2,
-            "Non-binary / Genderqueer / Gender fluid" = 3,
-            "Prefer to self describe" = 4,
+            "Female" = 1,
+            "Male" = 2,
+            "Non-binary / Genderqueer / Gender fluid person (2023 only)" = 3,
+            "Prefer to self describe (2023 only)" = 4,
             "Prefer not to say" = 98
           ),
           selected = list(1, 2, 3, 4, 98)
@@ -133,6 +150,15 @@ ui <- page_sidebar(
           choices = list(
             "No Disability" = 0,
             "Has Disability" = 1
+          ), 
+          selected = list(0, 1)
+        ),
+        #checkbox selection for transgender status; TRANSGENDER
+        checkboxGroupInput(
+          "TRANSGENDER", "Transgender Status:",
+          choices = list(
+            "Not Transgender" = 0,
+            "Transgender" = 1
           ), 
           selected = list(0, 1)
         ),
