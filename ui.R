@@ -3,6 +3,15 @@ library(bslib)
 library(markdown) # for shinyapps.io deployment
 
 ui <- page_sidebar(
+  # trigger a resize once Shiny finishes its first render so plot fills the container height
+  tags$head(
+    tags$script(HTML(
+      "$(document).one('shiny:idle', function() {
+        setTimeout(function() { $(window).trigger('resize'); }, 10);
+      });"
+    ))
+  ),
+
   # page title
   title = "CalVEX Analysis",
 
@@ -10,10 +19,10 @@ ui <- page_sidebar(
   sidebar = sidebar(
     
     # graph time selection: Lifetime or Past Year
-    selectInput("time", "Time Period:",
+    selectInput("time_period", "Time Period:",
       choices = list("Lifetime" = "lifetime",
                   "Past Year" = "past_year"),
-      selected = "lifetime"
+      selected = "past_year"
     ),
     
     # graph select violence type
@@ -52,6 +61,16 @@ ui <- page_sidebar(
       "overall",
       "Overall (all respondents)",
       value = TRUE
+    ),
+
+    # show past-year subcategory plots (only when Past Year and not IPV)
+    conditionalPanel(
+      condition = "input.time_period == 'past_year' && input.violence != 'ipv'",
+      checkboxInput(
+        "show_subcategories",
+        "Show subcategories",
+        value = FALSE
+      )
     ),
 
     accordion(
@@ -201,8 +220,18 @@ ui <- page_sidebar(
   ),
   
 
-  # main Panel
-  plotOutput("histogram")
+  # main Panel: single plot or side-by-side subcategory plots
+  conditionalPanel(
+    condition = "!input.show_subcategories || input.time_period != 'past_year' || input.violence == 'ipv'",
+    div(
+      style = "height: calc(100vh - 80px);",
+      plotOutput("histogram", height = "100%")
+    )
+  ),
+  conditionalPanel(
+    condition = "input.show_subcategories && input.time_period == 'past_year' && input.violence != 'ipv'",
+    uiOutput("subcategory_plots_ui")
+  )
 
 )
 
