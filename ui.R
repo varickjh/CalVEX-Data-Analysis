@@ -44,8 +44,7 @@ ui <- page_sidebar(
         "Income Quintile" = "INCOME_QUINTILE",
         "Education Level" = "EDUC_4",
         "Employment Status" = "EMPLOY_2",
-        "Disability Status" = "DISABILITY",
-        "Transgender" = "TRANSGENDER"),
+        "Disability Status" = "DISABILITY"),
       selected = "GENDER"
     ),
 
@@ -172,15 +171,6 @@ ui <- page_sidebar(
           ), 
           selected = list(0, 1)
         ),
-        #checkbox selection for transgender status; TRANSGENDER
-        checkboxGroupInput(
-          "TRANSGENDER", "Transgender Status:",
-          choices = list(
-            "Not Transgender" = 0,
-            "Transgender" = 1
-          ), 
-          selected = list(0, 1)
-        ),
       ),
 
       # accordion panel: time & location
@@ -199,7 +189,7 @@ ui <- page_sidebar(
               "2021" = 2021,
               "2020" = 2020
             ),
-            selected = list(2023, 2022, 2021, 2020)
+            selected = list(2025, 2023, 2022, 2021, 2020)
           )
         ),
         
