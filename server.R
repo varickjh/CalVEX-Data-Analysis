@@ -3,7 +3,7 @@ library(dplyr)
 library(ggplot2)
 library(grid)
 
-server <- function(input, output) {
+server <- function(input, output, session) {
   
   # data organization
   calvex2025 <- read.csv("data/CalVEX2025.csv")
@@ -12,10 +12,50 @@ server <- function(input, output) {
   calvex2021 <- read.csv("data/CalVEX2021.csv")
   calvex2020 <- read.csv("data/CalVEX2020.csv")
 
-  # standardization of column names (for violence outcomes) across years
-  # IPV
-  if ("IPV22_EVER" %in% names(calvex2023)) names(calvex2023)[names(calvex2023) == "IPV22_EVER"] <- "ipv_ever" # nolint: line_length_linter.
-  if ("ipv_ever" %in% names(calvex2020)) names(calvex2020)[names(calvex2020) == "ipv_ever"] <- "ipv_ever" # nolint: line_length_linter.
+  # normalize year-specific IPV columns into shared schema
+  if ("IPV22_EVER" %in% names(calvex2023)) {
+    names(calvex2023)[names(calvex2023) == "IPV22_EVER"] <- "ipv_ever"
+  }
+  if ("IPV22_YEAR" %in% names(calvex2023)) {
+    names(calvex2023)[names(calvex2023) == "IPV22_YEAR"] <- "ipv_year"
+  }
+  if ("IPV25_EVER" %in% names(calvex2025)) {
+    names(calvex2025)[names(calvex2025) == "IPV25_EVER"] <- "ipv_ever"
+  }
+  if ("IPV25_YEAR" %in% names(calvex2025)) {
+    names(calvex2025)[names(calvex2025) == "IPV25_YEAR"] <- "ipv_year"
+  }
+
+  # normalize 2025-specific column names into app schema
+  if (!("data_year" %in% names(calvex2025))) {
+    calvex2025$data_year <- 2025
+  }
+  if ("WEIGHT_CA" %in% names(calvex2025)) {
+    names(calvex2025)[names(calvex2025) == "WEIGHT_CA"] <- "WEIGHT"
+  }
+  if (!("INCOME_QUINTILE" %in% names(calvex2025)) && "INCOME_QUINTILE1" %in% names(calvex2025)) {
+    names(calvex2025)[names(calvex2025) == "INCOME_QUINTILE1"] <- "INCOME_QUINTILE"
+  }
+  if (!("EDUC_4" %in% names(calvex2025)) && "EDUC5" %in% names(calvex2025)) {
+    educ5_num <- suppressWarnings(as.numeric(calvex2025$EDUC5))
+    # Collapse 5-category education coding into the app's 4-category scheme.
+    # 5th category is merged into 4 (highest education).
+    calvex2025$EDUC_4 <- dplyr::case_when(
+      is.na(educ5_num) ~ NA_real_,
+      educ5_num >= 5 ~ 4,
+      TRUE ~ educ5_num
+    )
+  }
+  if ("DISABILITY" %in% names(calvex2025)) {
+    disability_num <- suppressWarnings(as.numeric(calvex2025$DISABILITY))
+    # 2025 coding uses 1/2/98; app expects 1 = Has Disability, 0 = No Disability.
+    calvex2025$DISABILITY <- dplyr::case_when(
+      is.na(disability_num) ~ NA_real_,
+      disability_num == 2 ~ 0,
+      disability_num == 1 ~ 1,
+      TRUE ~ disability_num
+    )
+  }
 
   # SV, PV, SV Perp, PV Perp (no standardization needed)
   
@@ -54,7 +94,7 @@ server <- function(input, output) {
     "sv_ever",
     "sv_12mo",
     "ipv_ever",
-    "ipv_12mo",
+    "ipv_year",
     "data_year",
     "INCOME_QUINTILE",
     "EDUC_4",
@@ -112,13 +152,13 @@ server <- function(input, output) {
     calvex2021,
     calvex2020
   )
-
+  
   # lookup tables / labels for graph & legend
   # gender labels (graph) - updated to match 2023 structure
   gender_labels <- c(
     "1" = "Female",
     "2" = "Male",
-    "3" = "Non-binary / Genderqueer / Gender fluid person / Prefer to self describe", # Only available in 2023 data
+    "3" = "Gender non-conforming",
     "98" = "Prefer not to say"
   )
   # sexuality labels (graph)
@@ -195,6 +235,33 @@ server <- function(input, output) {
     DISABILITY = disability_labels
   )
 
+  # fixed purple palette (stable order; mapped to canonical demographic order)
+  purple_fill_palette <- c("#CEA9EA", "#B08FD4", "#8E6FB0", "#6b558e", "#4A3D66", "#3d2d52")
+
+  # ordered non-Overall levels: definition order in demographic_labels, intersected with present values
+  ordered_demographic_levels <- function(demographic, present_chars) {
+    labs <- demographic_labels[[demographic]]
+    others <- present_chars[present_chars != "Overall"]
+    if (is.null(labs)) {
+      return(sort(unique(others)))
+    }
+    intersect(unname(labs), unique(others))
+  }
+
+  # named fill colors for Overall + categories (same label -> same color across violence types)
+  demographic_fill_values <- function(demographic, levels_present, overall_color = "#5c5c5c") {
+    lv <- levels_present[!is.na(levels_present)]
+    others <- lv[lv != "Overall"]
+    if (length(others) == 0L) {
+      return(c("Overall" = overall_color)[lv %in% "Overall"])
+    }
+    cols <- purple_fill_palette[seq_along(others)]
+    names(cols) <- others
+    out <- c(if ("Overall" %in% lv) c("Overall" = overall_color), cols)
+    idx <- lv[lv %in% names(out)]
+    out[idx]
+  }
+
     # reactive subset
   filtered_data <- reactive({
     df <- calvex_data
@@ -202,15 +269,9 @@ server <- function(input, output) {
 
     # time-aware filtering based on which violence variables actually exist
     if (!is.null(input$violence)) {
-      # IPV: specific years for lifetime vs 12mo
+      # IPV is only available in 2023 and 2025
       if (input$violence == "ipv") {
-        if (time_period == "lifetime") {
-          # only years with lifetime IPV: 2020, 2023
-          df <- df[df$data_year %in% c(2020, 2023), ]
-        } else {
-          # only years with 12mo IPV: 2021, 2022
-          df <- df[df$data_year %in% c(2021, 2022), ]
-        }
+        df <- df[df$data_year %in% c(2023, 2025), ]
       }
 
       # Sexual violence perpetration – past year: drop years with no 12mo data (e.g., 2020)
@@ -303,15 +364,21 @@ server <- function(input, output) {
   }
 
   # Build footnote lines based on current violence type
-  build_footnote_lines <- function(violence_type) {
+  build_footnote_lines <- function(violence_type, time_period = NULL, stat_type = NULL) {
     lines <- "* Background bars represent the total\n  number of people surveyed in that\n  demographic"
     if (violence_type == "ipv") {
-      lines <- c(lines,
-        "* 2021 & 2022 have no lifetime IPV\n  data; 2020 & 2023 have no past-year\n  (12-month) IPV data")
+      lines <- c(lines, "* IPV is only available in 2023 and 2025")
     } else if (violence_type == "sexual_perp") {
       lines <- c(lines, "* sv_perp_12mo was not asked in 2020")
     } else if (violence_type == "physical_perp") {
       lines <- c(lines, "* pv_perp_12mo was not asked in 2020")
+    }
+    if (!is.null(time_period) && !is.null(stat_type) &&
+        identical(time_period, "past_year") && identical(stat_type, "percent")) {
+      lines <- c(
+        lines,
+        "* Past-year percent axis is truncated at 60% for readability; percentages are out of 100%"
+      )
     }
     lines
   }
@@ -370,7 +437,7 @@ server <- function(input, output) {
       summary_df <- dplyr::bind_rows(summary_df, overall_df)
       if (any(summary_df[[demographic]] == "Overall", na.rm = TRUE)) {
         demo_vals <- as.character(summary_df[[demographic]])
-        other_levels <- sort(unique(demo_vals[demo_vals != "Overall"]))
+        other_levels <- ordered_demographic_levels(demographic, demo_vals)
         summary_df[[demographic]] <- factor(demo_vals, levels = c("Overall", other_levels))
       }
     }
@@ -388,6 +455,14 @@ server <- function(input, output) {
           summary_df <- dplyr::filter(summary_df, .data[[demographic]] %in% to_keep)
         }
       }
+    }
+
+    if (nrow(summary_df) > 0) {
+      dch <- as.character(summary_df[[demographic]])
+      olv <- ordered_demographic_levels(demographic, dch)
+      final_levels <- if (any(dch == "Overall", na.rm = TRUE)) c("Overall", olv) else olv
+      final_levels <- final_levels[vapply(final_levels, function(L) any(dch == L, na.rm = TRUE), logical(1L))]
+      summary_df[[demographic]] <- factor(dch, levels = final_levels)
     }
 
     # subcategory plots are always past-year, so cap percent scale at 50%
@@ -411,13 +486,8 @@ server <- function(input, output) {
       ylim_max <- max(summary_df$n_total, na.rm = TRUE) * 1.15
     }
 
-    fill_levels <- unique(as.character(summary_df[[demographic]]))
-    n_other <- length(fill_levels) - sum(fill_levels == "Overall", na.rm = TRUE)
-    fill_values <- c("Overall" = "darkgrey")
-    if (n_other > 0) {
-      other_levels <- fill_levels[fill_levels != "Overall"]
-      fill_values <- c(fill_values, setNames(scales::hue_pal()(n_other), other_levels))
-    }
+    fill_levels <- levels(summary_df[[demographic]])
+    fill_values <- demographic_fill_values(demographic, fill_levels)
 
     p <- ggplot(summary_df, aes(x = factor(data_year), fill = .data[[demographic]])) +
       geom_col(aes(y = denom_value), position = position_dodge(), alpha = 0.3, show.legend = FALSE) +
@@ -490,7 +560,7 @@ server <- function(input, output) {
     } else if (violence_type == "sexual") {
       if (time_period == "lifetime") "sv_ever" else "sv_12mo"
     } else if (violence_type == "ipv") {
-      if (time_period == "lifetime") "ipv_ever" else "ipv_12mo"
+      if (time_period == "lifetime") "ipv_ever" else "ipv_year"
     } else if (violence_type == "sexual_perp") {
       if (time_period == "lifetime") "sv_perp_ever" else "sv_perp_12mo"
     } else {
@@ -525,7 +595,7 @@ server <- function(input, output) {
       summary_df <- dplyr::bind_rows(summary_df, overall_df)
       if (any(summary_df[[demographic]] == "Overall", na.rm = TRUE)) {
         demo_vals <- as.character(summary_df[[demographic]])
-        other_levels <- sort(unique(demo_vals[demo_vals != "Overall"]))
+        other_levels <- ordered_demographic_levels(demographic, demo_vals)
         summary_df[[demographic]] <- factor(demo_vals, levels = c("Overall", other_levels))
       }
     }
@@ -545,6 +615,14 @@ server <- function(input, output) {
       }
     }
 
+    if (nrow(summary_df) > 0) {
+      dch <- as.character(summary_df[[demographic]])
+      olv <- ordered_demographic_levels(demographic, dch)
+      final_levels <- if (any(dch == "Overall", na.rm = TRUE)) c("Overall", olv) else olv
+      final_levels <- final_levels[vapply(final_levels, function(L) any(dch == L, na.rm = TRUE), logical(1L))]
+      summary_df[[demographic]] <- factor(dch, levels = final_levels)
+    }
+
     # message("\n--- Percent Calculation: numerator / denominator ---")
     # print(as.data.frame(summary_df[, c("data_year", demographic,
     #   "n_total", "violence_count",
@@ -552,7 +630,7 @@ server <- function(input, output) {
 
     if (stat_type == "percent") {
       scale_max  <- if (time_period == "past_year") 60 else 100
-      ylim_max   <- if (time_period == "past_year") 63 else 107
+      ylim_max   <- if (time_period == "past_year") 70 else 107
       summary_df <- summary_df %>%
         mutate(
           value = violence_percent,
@@ -573,15 +651,14 @@ server <- function(input, output) {
 
     v_title <- if (violence_type == "physical") "Physical Violence" else if (violence_type == "sexual") "Sexual Violence" else if (violence_type == "ipv") "Intimate Partner Violence" else if (violence_type == "sexual_perp") "Sexual Violence Perpetration" else "Physical Violence Perpetration"
 
-    fill_levels <- unique(as.character(summary_df[[demographic]]))
-    n_other <- length(fill_levels) - sum(fill_levels == "Overall", na.rm = TRUE)
-    fill_values <- c("Overall" = "darkgrey")
-    if (n_other > 0) {
-      other_levels <- fill_levels[fill_levels != "Overall"]
-      fill_values <- c(fill_values, setNames(scales::hue_pal()(n_other), other_levels))
-    }
+    fill_levels <- levels(summary_df[[demographic]])
+    fill_values <- demographic_fill_values(demographic, fill_levels)
 
-    p <- ggplot(summary_df, aes(x = factor(data_year), fill = .data[[demographic]])) +
+    p <- ggplot(summary_df, aes(x = factor(data_year), fill = .data[[demographic]]))
+    if (stat_type == "percent" && identical(time_period, "past_year")) {
+      p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35)
+    }
+    p <- p +
       geom_col(aes(y = denom_value), position = position_dodge(), alpha = 0.3, show.legend = FALSE) +
       geom_text(
         aes(y = denom_value, label = paste0(n_total)),
@@ -595,21 +672,68 @@ server <- function(input, output) {
         y = y_lab,
         fill = graph_labels[demographic],
         title = paste(v_title, "Experience by", graph_labels[demographic], "–", paste(sort(unique(df$data_year)), collapse = ", "))) +
-      ylim(0, ylim_max) +
       theme_minimal()
+
+    if (stat_type == "percent" && identical(time_period, "past_year")) {
+      ny <- length(unique(summary_df$data_year))
+      x_annot <- if (ny >= 1L) mean(seq_len(ny)) else 1
+      p <- p +
+        annotate(
+          "text",
+          x = x_annot,
+          y = 62.5,
+          label = "\u2192 100%",
+          size = 3.2,
+          color = "gray35",
+          fontface = "italic"
+        ) +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          breaks = c(0, 20, 40, 60),
+          expand = ggplot2::expansion(mult = c(0, 0))
+        ) +
+        coord_cartesian(clip = "off") +
+        theme(plot.margin = ggplot2::margin(6, 6, 14, 6))
+    } else if (stat_type == "percent") {
+      p <- p +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          breaks = c(0, 20, 40, 60, 80, 100),
+          expand = ggplot2::expansion(mult = c(0, 0))
+        )
+    } else {
+      p <- p +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          expand = ggplot2::expansion(mult = c(0, 0.02))
+        )
+    }
 
     legend_grob <- get_legend_grob(p)
     p_no_legend <- p + theme(legend.position = "none")
-    footnote_lines <- build_footnote_lines(violence_type)
+    footnote_lines <- build_footnote_lines(violence_type, time_period, stat_type)
+
+    pw <- session$clientData[["output_histogram_width"]]
+    narrow <- !is.null(pw) && !is.na(pw) && pw < 700
 
     grid::grid.newpage()
-    layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
-    grid::pushViewport(grid::viewport(layout = layout_mat))
-    print(p_no_legend, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
-    grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
-    draw_legend_with_footnotes(legend_grob, footnote_lines)
-    grid::popViewport()
-    grid::popViewport()
+    if (narrow) {
+      layout_mat <- grid::grid.layout(2, 1, heights = grid::unit(c(72, 28), "null"))
+      grid::pushViewport(grid::viewport(layout = layout_mat))
+      print(p_no_legend, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
+      grid::pushViewport(grid::viewport(layout.pos.row = 2, layout.pos.col = 1))
+      draw_legend_with_footnotes(legend_grob, footnote_lines)
+      grid::popViewport()
+      grid::popViewport()
+    } else {
+      layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
+      grid::pushViewport(grid::viewport(layout = layout_mat))
+      print(p_no_legend, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
+      grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
+      draw_legend_with_footnotes(legend_grob, footnote_lines)
+      grid::popViewport()
+      grid::popViewport()
+    }
   })
 
   # dynamic height for subcategory plot container
@@ -624,7 +748,7 @@ server <- function(input, output) {
     n <- if (is.null(config)) 0L else length(config)
     req(n > 0)
     div(
-      style = "height: calc(100vh - 80px);",
+      class = "calvex-plot-wrap",
       plotOutput("subcategory_plots", height = "100%")
     )
   })
@@ -673,27 +797,50 @@ server <- function(input, output) {
     }
     req(length(plot_list) > 0)
     n <- length(plot_list)
-    ncol <- if (n <= 3) 1L else 3L
+    pw_sub <- session$clientData[["output_subcategory_plots_width"]]
+    narrow_sub <- !is.null(pw_sub) && !is.na(pw_sub) && pw_sub < 700
+    ncol <- if (narrow_sub) 1L else if (n <= 3L) 1L else 3L
     nrow <- ceiling(n / ncol)
 
     # tryCatch guards against the brief moment when the container is resized
     # during a violence-type switch and the device dimensions are invalid.
     tryCatch({
       grid::grid.newpage()
-      layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
-      grid::pushViewport(grid::viewport(layout = layout_mat))
-      grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 1,
-        layout = grid::grid.layout(nrow, ncol)))
-      for (i in seq_along(plot_list)) {
-        row <- (i - 1L) %/% ncol + 1L
-        col <- (i - 1L) %% ncol + 1L
-        print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
+      if (narrow_sub) {
+        layout_mat <- grid::grid.layout(2, 1, heights = grid::unit(c(72, 28), "null"))
+        grid::pushViewport(grid::viewport(layout = layout_mat))
+        grid::pushViewport(grid::viewport(
+          layout.pos.row = 1, layout.pos.col = 1,
+          layout = grid::grid.layout(nrow, ncol)
+        ))
+        for (i in seq_along(plot_list)) {
+          row <- (i - 1L) %/% ncol + 1L
+          col <- (i - 1L) %% ncol + 1L
+          print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
+        }
+        grid::popViewport()
+        grid::pushViewport(grid::viewport(layout.pos.row = 2, layout.pos.col = 1))
+        draw_legend_with_footnotes(legend_grob, build_footnote_lines(violence_type, "past_year", stat_type))
+        grid::popViewport()
+        grid::popViewport()
+      } else {
+        layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
+        grid::pushViewport(grid::viewport(layout = layout_mat))
+        grid::pushViewport(grid::viewport(
+          layout.pos.row = 1, layout.pos.col = 1,
+          layout = grid::grid.layout(nrow, ncol)
+        ))
+        for (i in seq_along(plot_list)) {
+          row <- (i - 1L) %/% ncol + 1L
+          col <- (i - 1L) %% ncol + 1L
+          print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
+        }
+        grid::popViewport()
+        grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
+        draw_legend_with_footnotes(legend_grob, build_footnote_lines(violence_type, "past_year", stat_type))
+        grid::popViewport()
+        grid::popViewport()
       }
-      grid::popViewport()
-      grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
-      draw_legend_with_footnotes(legend_grob, build_footnote_lines(violence_type))
-      grid::popViewport()
-      grid::popViewport()
     }, error = function(e) {
       # Suppress transient device-size errors; Shiny will re-render once the
       # container has settled at its correct dimensions.

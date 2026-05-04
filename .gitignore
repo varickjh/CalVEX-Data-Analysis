@@ -58,3 +58,6 @@ CalVEX2023_Codebook&SimpleFrequencies.xlsx
 eda.ipynb
 \[A164\] UCSD_Tulane_CalVEX Survey 2025_Final Data.dta
 .DS_Store
+ignore/supabase_data_+_shiny_deploy_2ba1634e.plan.md
+ignore/dashboard_ux_and_responsiveness_d2419f93.plan.md
+ignore/CalVEX 2025 Prepared.dta

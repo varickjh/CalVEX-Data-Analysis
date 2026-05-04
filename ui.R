@@ -3,13 +3,40 @@ library(bslib)
 library(markdown) # for shinyapps.io deployment
 
 ui <- page_sidebar(
+  fillable = TRUE,
+  fillable_mobile = TRUE,
   # trigger a resize once Shiny finishes its first render so plot fills the container height
   tags$head(
     tags$script(HTML(
       "$(document).one('shiny:idle', function() {
         setTimeout(function() { $(window).trigger('resize'); }, 10);
       });"
-    ))
+    )),
+    tags$style(HTML("
+      .calvex-plot-wrap {
+        min-height: 280px;
+        height: calc(100dvh - 80px);
+        height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+      }
+      .calvex-plot-wrap .shiny-plot-output {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      @media (max-width: 768px) {
+        .calvex-plot-wrap {
+          max-height: min(520px, calc(100dvh - 120px));
+          max-height: min(520px, calc(100vh - 120px));
+        }
+      }
+      @media (max-width: 576px) {
+        .calvex-plot-wrap {
+          max-height: min(420px, calc(100dvh - 140px));
+          max-height: min(420px, calc(100vh - 140px));
+        }
+      }
+    "))
   ),
 
   # page title
@@ -17,6 +44,8 @@ ui <- page_sidebar(
 
   # sidebar Layout 
   sidebar = sidebar(
+    open = list(desktop = "open", mobile = "closed"),
+    collapsible = TRUE,
     
     # graph time selection: Lifetime or Past Year
     selectInput("time_period", "Time Period:",
@@ -83,11 +112,10 @@ ui <- page_sidebar(
           choices = list(
             "Female" = 1,
             "Male" = 2,
-            "Non-binary / Genderqueer / Gender fluid person (2023 only)" = 3,
-            "Prefer to self describe (2023 only)" = 4,
+            "Gender non-conforming" = 3,
             "Prefer not to say" = 98
           ),
-          selected = list(1, 2, 3, 4, 98)
+          selected = list(1, 2, 3, 98)
         ),
 
         # checkbox selection for self-described sexuality; LGB_3
@@ -199,10 +227,9 @@ ui <- page_sidebar(
             "YEAR", "YEAR:",
             choices = list(
               "2025" = 2025,
-              "2023" = 2023,
-              "2020" = 2020
+              "2023" = 2023
             ),
-            selected = list(2023, 2020)
+            selected = list(2025, 2023)
           )
         )
       )
@@ -214,7 +241,7 @@ ui <- page_sidebar(
   conditionalPanel(
     condition = "!input.show_subcategories || input.time_period != 'past_year' || input.violence == 'ipv'",
     div(
-      style = "height: calc(100vh - 80px);",
+      class = "calvex-plot-wrap",
       plotOutput("histogram", height = "100%")
     )
   ),
