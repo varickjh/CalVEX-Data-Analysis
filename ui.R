@@ -13,10 +13,19 @@ ui <- page_sidebar(
       });"
     )),
     tags$style(HTML("
+      .bslib-page-sidebar > .main { display: flex; flex-direction: column; min-height: 0; }
       .calvex-plot-wrap {
         min-height: 280px;
         height: calc(100dvh - 80px);
         height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .calvex-plot-inner {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
         display: flex;
         flex-direction: column;
       }
@@ -75,6 +84,13 @@ ui <- page_sidebar(
         "Employment Status" = "EMPLOY_2",
         "Disability Status" = "DISABILITY"),
       selected = "GENDER"
+    ),
+
+    selectInput(
+      "chart_type",
+      "Chart Type:",
+      choices = list("Bar chart" = "bar", "Line chart" = "line"),
+      selected = "bar"
     ),
 
     # graph select percentage vs. count
@@ -205,32 +221,38 @@ ui <- page_sidebar(
       accordion_panel(
         "Time & Location",
 
-        # checkbox selection for year data was recorded; YEAR
-        conditionalPanel(
-          condition = "input.violence != 'ipv'",
-          checkboxGroupInput(
-            "YEAR", "YEAR:",
-            choices = list(
-              "2025" = 2025,
-              "2023" = 2023,
-              "2022" = 2022,
-              "2021" = 2021,
-              "2020" = 2020
-            ),
-            selected = list(2025, 2023, 2022, 2021, 2020)
-          )
+        uiOutput("year_ui"),
+
+        checkboxGroupInput(
+          "CA_REGION",
+          "California Region:",
+          choices = list(
+            "Bay Region" = 1,
+            "Central Valley" = 2,
+            "Mountain Valley" = 3,
+            "Northern" = 4,
+            "Southern" = 5
+          ),
+          selected = list(1, 2, 3, 4, 5)
         ),
-        
-        conditionalPanel(
-          condition = "input.violence == 'ipv'",
-          checkboxGroupInput(
-            "YEAR", "YEAR:",
-            choices = list(
-              "2025" = 2025,
-              "2023" = 2023
-            ),
-            selected = list(2025, 2023)
-          )
+        helpText(
+          style = "font-size: 0.82rem;",
+          "Region filter applies to years with region data; respondents with missing region are excluded when filtering."
+        )
+      ),
+
+      accordion_panel(
+        "Notes & Citations",
+        tags$ul(
+          style = "font-size: 0.92rem; padding-left: 1.1rem;",
+          tags$li("All data are weighted."),
+          tags$li(
+            "Interpret proportions and percentages with caution when the cell size is less than 50."
+          ),
+          tags$li(
+            "We cannot assume that differences are statistically significant; see reports for significance levels."
+          ),
+          tags$li("Raw data can be accessed in full datasets on OpenICPSR.")
         )
       )
     ),
@@ -242,13 +264,37 @@ ui <- page_sidebar(
     condition = "!input.show_subcategories || input.time_period != 'past_year' || input.violence == 'ipv'",
     div(
       class = "calvex-plot-wrap",
-      plotOutput("histogram", height = "100%")
+      div(
+        class = "calvex-plot-inner",
+        plotOutput(
+          "histogram",
+          height = "100%"
+        )
+      ),
+      uiOutput("footnotes_html")
     )
   ),
   conditionalPanel(
     condition = "input.show_subcategories && input.time_period == 'past_year' && input.violence != 'ipv'",
-    uiOutput("subcategory_plots_ui")
-  )
+    tagList(
+      uiOutput("subcategory_plots_ui"),
+      uiOutput("footnotes_html_sub")
+    )
+  ),
 
+  tags$footer(
+    style = paste(
+      "padding: 10px 16px; font-size: 0.88rem; color: #444;",
+      "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+    ),
+    HTML(
+      paste0(
+        "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+        "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+        "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+        "www.vexdata.org/data/caldashboard</a>."
+      )
+    )
+  )
 )
 

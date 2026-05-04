@@ -81,12 +81,32 @@ server <- function(input, output, session) {
   } else if ("GENDER2" %in% names(calvex2020)) {
     names(calvex2020)[names(calvex2020) == "GENDER_2"] <- "GENDER"
   }
-  
+
+  # California region: 2020–2023 use P_CA_REGION; 2025 uses CA_REGION — unify to CA_REGION
+  unify_ca_region <- function(df) {
+    if ("P_CA_REGION" %in% names(df)) {
+      if (!"CA_REGION" %in% names(df)) {
+        names(df)[names(df) == "P_CA_REGION"] <- "CA_REGION"
+      } else {
+        pr <- suppressWarnings(as.numeric(df$P_CA_REGION))
+        cr <- suppressWarnings(as.numeric(df$CA_REGION))
+        df$CA_REGION <- dplyr::coalesce(cr, pr)
+        df$P_CA_REGION <- NULL
+      }
+    }
+    df
+  }
+  calvex2020 <- unify_ca_region(calvex2020)
+  calvex2021 <- unify_ca_region(calvex2021)
+  calvex2022 <- unify_ca_region(calvex2022)
+  calvex2023 <- unify_ca_region(calvex2023)
+  calvex2025 <- unify_ca_region(calvex2025)
 
   # isolate variables we are comparing (can change later) & combine into dataset
   cols_needed <- c(
     "GENDER",
     "LGB_3",
+    "CA_REGION",
     "AGE_6",
     "RACE_5",
     "pv_ever",
@@ -262,7 +282,39 @@ server <- function(input, output, session) {
     out[idx]
   }
 
-    # reactive subset
+  # ggplot theme: larger axis text, legends, titles
+  plot_calvex_theme <- function(legend_pos = "right") {
+    theme_minimal(base_size = 14) +
+      theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12),
+        plot.title = element_text(size = 15, face = "bold"),
+        plot.caption = element_text(size = 10, color = "gray40"),
+        legend.position = legend_pos
+      )
+  }
+
+  # Dynamic year selector: choices depend on violence type (IPV = 2023/2025 only)
+  output$year_ui <- renderUI({
+    vt <- if (!is.null(input$violence)) input$violence else "physical"
+    if (identical(vt, "ipv")) {
+      checkboxGroupInput(
+        "YEAR", "Survey Year:",
+        choices = list("2025" = 2025, "2023" = 2023),
+        selected = list(2025, 2023)
+      )
+    } else {
+      checkboxGroupInput(
+        "YEAR", "Survey Year:",
+        choices = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
+        selected = list(2025, 2023, 2022, 2021, 2020)
+      )
+    }
+  })
+
+  # reactive subset
   filtered_data <- reactive({
     df <- calvex_data
     time_period <- if (!is.null(input$time_period)) input$time_period else "lifetime"
@@ -306,6 +358,12 @@ server <- function(input, output, session) {
     # filter by year
     if (!is.null(input$YEAR) && length(input$YEAR) > 0)
       df <- df[df$data_year %in% suppressWarnings(as.numeric(input$YEAR)), ]
+
+    # filter by California region (numeric codes 1–5)
+    if (!is.null(input$CA_REGION) && length(input$CA_REGION) > 0) {
+      df <- df[!is.na(df$CA_REGION) &
+        df$CA_REGION %in% suppressWarnings(as.numeric(input$CA_REGION)), ]
+    }
 
     # convert codes to labels for plotting
     df$GENDER <- factor(
@@ -352,17 +410,6 @@ server <- function(input, output, session) {
     df
   })
 
-  # Extract legend grob from a ggplot (for shared legend in subcategory grid).
-  # ggplot2 >= 3.5 renamed "guide-box" to "guide-box-right" / "guide-box-inside"
-  # etc., so match on the prefix rather than an exact string.
-  get_legend_grob <- function(a_plot) {
-    if (!inherits(a_plot, "ggplot")) return(NULL)
-    tmp  <- ggplot2::ggplot_gtable(ggplot2::ggplot_build(a_plot))
-    nms  <- sapply(tmp$grobs, function(x) x$name)
-    leg  <- which(grepl("^guide-box", nms))
-    if (length(leg) > 0) tmp$grobs[[leg[1]]] else NULL
-  }
-
   # Build footnote lines based on current violence type
   build_footnote_lines <- function(violence_type, time_period = NULL, stat_type = NULL) {
     lines <- "* Background bars represent the total\n  number of people surveyed in that\n  demographic"
@@ -383,32 +430,10 @@ server <- function(input, output, session) {
     lines
   }
 
-  # Draw legend grob + footnotes stacked vertically inside the current viewport.
-  # clip = "on" prevents a wide legend grob from bleeding into the plot area.
-  draw_legend_with_footnotes <- function(legend_grob, footnote_lines) {
-    note_text <- paste(footnote_lines, collapse = "\n\n")
-    fn_grob <- grid::textGrob(
-      note_text,
-      x = 0.05, y = 0.98,
-      just = c("left", "top"),
-      gp = grid::gpar(fontsize = 8, col = "gray50")
-    )
-    right_layout <- grid::grid.layout(2, 1, heights = grid::unit(c(0.55, 0.45), "npc"))
-    grid::pushViewport(grid::viewport(layout = right_layout))
-    if (!is.null(legend_grob)) {
-      grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 1, clip = "on"))
-      grid::grid.draw(legend_grob)
-      grid::popViewport()
-    }
-    grid::pushViewport(grid::viewport(layout.pos.row = 2, layout.pos.col = 1))
-    grid::grid.draw(fn_grob)
-    grid::popViewport()
-    grid::popViewport()
-  }
-
-  # Build one bar chart (same format as main plot) for a given violence column
+  # Build one chart (bar or line) for a given violence column (subcategory panel)
   make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
-                            show_overall, demographic_labels, graph_labels, show_legend = TRUE) {
+                            show_overall, demographic_labels, graph_labels,
+                            show_legend = TRUE, chart_type = "bar") {
     if (!violence_col %in% names(df)) return(NULL)
     summary_df <- df %>%
       group_by(data_year, .data[[demographic]]) %>%
@@ -488,24 +513,59 @@ server <- function(input, output, session) {
 
     fill_levels <- levels(summary_df[[demographic]])
     fill_values <- demographic_fill_values(demographic, fill_levels)
+    x_breaks <- sort(unique(as.integer(summary_df$data_year)))
 
-    p <- ggplot(summary_df, aes(x = factor(data_year), fill = .data[[demographic]])) +
-      geom_col(aes(y = denom_value), position = position_dodge(), alpha = 0.3, show.legend = FALSE) +
-      geom_text(
-        aes(y = denom_value, label = paste0(n_total)),
-        vjust = -0.5, position = position_dodge(width = 0.9), size = 3, color = "gray40"
-      ) +
-      geom_col(aes(y = value), position = position_dodge()) +
-      geom_text(aes(y = value, label = label), vjust = -0.5, position = position_dodge(width = 0.9)) +
-      scale_fill_manual(values = fill_values) +
-      labs(
-        x = "Year",
-        y = y_lab,
-        fill = graph_labels[demographic],
-        title = plot_title
-      ) +
-      ylim(0, ylim_max) +
-      theme_minimal()
+    if (identical(chart_type, "line")) {
+      p <- ggplot(summary_df, aes(
+        x = .data$data_year,
+        y = .data$value,
+        color = .data[[demographic]],
+        group = .data[[demographic]]
+      )) +
+        geom_line(linewidth = 1.1) +
+        geom_point(size = 3) +
+        geom_text(aes(label = .data$label), vjust = -0.75, size = 4, show.legend = FALSE) +
+        scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
+        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
+        labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = plot_title) +
+        plot_calvex_theme(if (show_legend) "bottom" else "none") +
+        theme(legend.direction = "horizontal")
+      if (stat_type == "percent") {
+        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      } else {
+        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      }
+    } else {
+      p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]])) +
+        geom_col(
+          aes(y = .data$denom_value),
+          position = position_dodge(width = 0.85),
+          alpha = 0.3,
+          width = 0.72,
+          show.legend = FALSE
+        ) +
+        geom_text(
+          aes(y = .data$denom_value, label = paste0(.data$n_total)),
+          vjust = -0.35,
+          position = position_dodge(width = 0.85),
+          size = 4,
+          color = "gray40",
+          show.legend = FALSE
+        ) +
+        geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
+        geom_text(
+          aes(y = .data$value, label = .data$label),
+          vjust = -0.35,
+          position = position_dodge(width = 0.85),
+          size = 4,
+          show.legend = FALSE
+        ) +
+        scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
+        labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = plot_title) +
+        plot_calvex_theme() +
+        scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+    }
+
     if (!show_legend) {
       p <- p + theme(legend.position = "none")
     }
@@ -542,18 +602,57 @@ server <- function(input, output, session) {
     )
   )
 
+  # Footnotes below main plot (ggplot renders its own legend)
+  output$footnotes_html <- renderUI({
+    vt <- if (!is.null(input$violence)) input$violence else "physical"
+    tp <- if (!is.null(input$time_period)) input$time_period else "lifetime"
+    st <- if (!is.null(input$statistics)) input$statistics else "percent"
+    if (isTRUE(input$show_subcategories) &&
+        identical(tp, "past_year") &&
+        !identical(vt, "ipv")) {
+      lines <- build_footnote_lines(vt, "past_year", st)
+    } else {
+      lines <- build_footnote_lines(vt, tp, st)
+    }
+    note_html <- lapply(lines, function(ln) tags$p(style = "margin: 0.35rem 0; font-size: 0.9rem; color: #555;", ln))
+    tags$div(
+      style = "padding: 0.5rem 0.25rem 0.75rem; max-width: 100%;",
+      note_html
+    )
+  })
+
+  # Footnotes below subcategory grid (separate output id so both panels can exist)
+  output$footnotes_html_sub <- renderUI({
+    req(
+      isTRUE(input$show_subcategories),
+      identical(if (!is.null(input$time_period)) input$time_period else "lifetime", "past_year"),
+      !identical(if (!is.null(input$violence)) input$violence else "physical", "ipv")
+    )
+    vt <- input$violence
+    st <- if (!is.null(input$statistics)) input$statistics else "percent"
+    lines <- build_footnote_lines(vt, "past_year", st)
+    note_html <- lapply(lines, function(ln) tags$p(style = "margin: 0.35rem 0; font-size: 0.9rem; color: #555;", ln))
+    tags$div(
+      style = "padding: 0.5rem 0.25rem 0.75rem; max-width: 100%;",
+      note_html
+    )
+  })
+
+  # Hover tooltip: unweighted cell n and event count
   # output: single plot (when not showing subcategories)
   output$histogram <- renderPlot({
     if (isTRUE(input$show_subcategories) &&
         identical(input$time_period, "past_year") &&
         input$violence != "ipv") {
-      return(NULL)
+      return(invisible(NULL))
     }
+    req(input$YEAR, input$CA_REGION)
     df <- filtered_data()
     demographic <- input$demographic
     stat_type <- input$statistics
     violence_type <- input$violence
     time_period <- if (!is.null(input$time_period)) input$time_period else "lifetime"
+    chart_type <- if (!is.null(input$chart_type)) input$chart_type else "bar"
 
     violence_col <- if (violence_type == "physical") {
       if (time_period == "lifetime") "pv_ever" else "pv_12mo"
@@ -623,11 +722,6 @@ server <- function(input, output, session) {
       summary_df[[demographic]] <- factor(dch, levels = final_levels)
     }
 
-    # message("\n--- Percent Calculation: numerator / denominator ---")
-    # print(as.data.frame(summary_df[, c("data_year", demographic,
-    #   "n_total", "violence_count",
-    #   "violence_count_weighted", "total_surveyed_in_demographic", "violence_percent")]))
-
     if (stat_type == "percent") {
       scale_max  <- if (time_period == "past_year") 60 else 100
       ylim_max   <- if (time_period == "past_year") 70 else 107
@@ -649,41 +743,109 @@ server <- function(input, output, session) {
       ylim_max <- max(summary_df$n_total, na.rm = TRUE) * 1.15
     }
 
+    summary_df$data_year <- as.integer(summary_df$data_year)
+    x_breaks <- sort(unique(summary_df$data_year))
+
     v_title <- if (violence_type == "physical") "Physical Violence" else if (violence_type == "sexual") "Sexual Violence" else if (violence_type == "ipv") "Intimate Partner Violence" else if (violence_type == "sexual_perp") "Sexual Violence Perpetration" else "Physical Violence Perpetration"
+    main_title <- paste(v_title, "Experience by", graph_labels[demographic], "–", paste(sort(unique(df$data_year)), collapse = ", "))
 
     fill_levels <- levels(summary_df[[demographic]])
     fill_values <- demographic_fill_values(demographic, fill_levels)
 
-    p <- ggplot(summary_df, aes(x = factor(data_year), fill = .data[[demographic]]))
+    pw <- session$clientData[["output_histogram_width"]]
+    narrow <- !is.null(pw) && !is.na(pw) && pw < 700
+    leg_pos_main <- if (narrow) "bottom" else "right"
+
+    if (identical(chart_type, "line")) {
+      p <- ggplot(summary_df, aes(
+        x = .data$data_year,
+        y = .data$value,
+        color = .data[[demographic]],
+        group = .data[[demographic]]
+      )) +
+        geom_line(linewidth = 1.15) +
+        geom_point(size = 3.2) +
+        geom_text(aes(label = .data$label), vjust = -0.8, size = 4.2, show.legend = FALSE) +
+        scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
+        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
+        labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = main_title) +
+        plot_calvex_theme(leg_pos_main) +
+        theme(legend.direction = if (narrow) "horizontal" else "vertical")
+
+      if (stat_type == "percent" && identical(time_period, "past_year")) {
+        p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35) +
+          annotate(
+            "text",
+            x = mean(x_breaks),
+            y = 62.5,
+            label = "\u2192 100%",
+            size = 3.8,
+            color = "gray35",
+            fontface = "italic"
+          ) +
+          scale_y_continuous(
+            limits = c(0, ylim_max),
+            breaks = c(0, 20, 40, 60),
+            expand = ggplot2::expansion(mult = c(0, 0))
+          ) +
+          coord_cartesian(clip = "off") +
+          theme(plot.margin = ggplot2::margin(8, 8, 16, 8))
+      } else if (stat_type == "percent") {
+        p <- p +
+          scale_y_continuous(
+            limits = c(0, ylim_max),
+            breaks = c(0, 20, 40, 60, 80, 100),
+            expand = ggplot2::expansion(mult = c(0, 0))
+          )
+      } else {
+        p <- p +
+          scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      }
+      print(p)
+      return(invisible(NULL))
+    }
+
+    p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]]))
     if (stat_type == "percent" && identical(time_period, "past_year")) {
       p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35)
     }
     p <- p +
-      geom_col(aes(y = denom_value), position = position_dodge(), alpha = 0.3, show.legend = FALSE) +
-      geom_text(
-        aes(y = denom_value, label = paste0(n_total)),
-        vjust = -0.5, position = position_dodge(width = 0.9), size = 3, color = "gray40"
+      geom_col(
+        aes(y = .data$denom_value),
+        position = position_dodge(width = 0.85),
+        alpha = 0.3,
+        width = 0.72,
+        show.legend = FALSE
       ) +
-      geom_col(aes(y = value), position = position_dodge()) +
-      geom_text(aes(y = value, label = label), vjust = -0.5, position = position_dodge(width = 0.9)) +
-      scale_fill_manual(values = fill_values) +
-      labs(
-        x = "Year",
-        y = y_lab,
-        fill = graph_labels[demographic],
-        title = paste(v_title, "Experience by", graph_labels[demographic], "–", paste(sort(unique(df$data_year)), collapse = ", "))) +
-      theme_minimal()
+      geom_text(
+        aes(y = .data$denom_value, label = paste0(.data$n_total)),
+        vjust = -0.35,
+        position = position_dodge(width = 0.85),
+        size = 4,
+        color = "gray40",
+        show.legend = FALSE
+      ) +
+      geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
+      geom_text(
+        aes(y = .data$value, label = .data$label),
+        vjust = -0.35,
+        position = position_dodge(width = 0.85),
+        size = 4,
+        show.legend = FALSE
+      ) +
+      scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
+      labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = main_title) +
+      plot_calvex_theme(leg_pos_main) +
+      theme(legend.direction = if (narrow) "horizontal" else "vertical")
 
     if (stat_type == "percent" && identical(time_period, "past_year")) {
-      ny <- length(unique(summary_df$data_year))
-      x_annot <- if (ny >= 1L) mean(seq_len(ny)) else 1
       p <- p +
         annotate(
           "text",
-          x = x_annot,
+          x = mean(seq_along(x_breaks)),
           y = 62.5,
           label = "\u2192 100%",
-          size = 3.2,
+          size = 3.8,
           color = "gray35",
           fontface = "italic"
         ) +
@@ -693,7 +855,7 @@ server <- function(input, output, session) {
           expand = ggplot2::expansion(mult = c(0, 0))
         ) +
         coord_cartesian(clip = "off") +
-        theme(plot.margin = ggplot2::margin(6, 6, 14, 6))
+        theme(plot.margin = ggplot2::margin(8, 8, 16, 8))
     } else if (stat_type == "percent") {
       p <- p +
         scale_y_continuous(
@@ -703,37 +865,10 @@ server <- function(input, output, session) {
         )
     } else {
       p <- p +
-        scale_y_continuous(
-          limits = c(0, ylim_max),
-          expand = ggplot2::expansion(mult = c(0, 0.02))
-        )
+        scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
     }
 
-    legend_grob <- get_legend_grob(p)
-    p_no_legend <- p + theme(legend.position = "none")
-    footnote_lines <- build_footnote_lines(violence_type, time_period, stat_type)
-
-    pw <- session$clientData[["output_histogram_width"]]
-    narrow <- !is.null(pw) && !is.na(pw) && pw < 700
-
-    grid::grid.newpage()
-    if (narrow) {
-      layout_mat <- grid::grid.layout(2, 1, heights = grid::unit(c(72, 28), "null"))
-      grid::pushViewport(grid::viewport(layout = layout_mat))
-      print(p_no_legend, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
-      grid::pushViewport(grid::viewport(layout.pos.row = 2, layout.pos.col = 1))
-      draw_legend_with_footnotes(legend_grob, footnote_lines)
-      grid::popViewport()
-      grid::popViewport()
-    } else {
-      layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
-      grid::pushViewport(grid::viewport(layout = layout_mat))
-      print(p_no_legend, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
-      grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
-      draw_legend_with_footnotes(legend_grob, footnote_lines)
-      grid::popViewport()
-      grid::popViewport()
-    }
+    print(p)
   })
 
   # dynamic height for subcategory plot container
@@ -758,6 +893,7 @@ server <- function(input, output, session) {
     req(isTRUE(input$show_subcategories),
         identical(input$time_period, "past_year"),
         input$violence != "ipv")
+    req(input$YEAR, input$CA_REGION)
     df <- filtered_data()
     violence_type <- input$violence
     config <- subcategory_config[[violence_type]]
@@ -767,18 +903,7 @@ server <- function(input, output, session) {
     stat_type <- input$statistics
     show_overall <- is.null(input$overall) || isTRUE(input$overall)
 
-    legend_plot <- make_one_plot(
-      df,
-      violence_col = config[[1]]$col,
-      plot_title = config[[1]]$title,
-      demographic = demographic,
-      stat_type = stat_type,
-      show_overall = show_overall,
-      demographic_labels = demographic_labels,
-      graph_labels = graph_labels,
-      show_legend = TRUE
-    )
-    legend_grob <- get_legend_grob(legend_plot)
+    chart_type <- if (!is.null(input$chart_type)) input$chart_type else "bar"
 
     plot_list <- list()
     for (i in seq_along(config)) {
@@ -791,7 +916,8 @@ server <- function(input, output, session) {
         show_overall = show_overall,
         demographic_labels = demographic_labels,
         graph_labels = graph_labels,
-        show_legend = FALSE
+        show_legend = identical(i, 1L),
+        chart_type = chart_type
       )
       if (!is.null(p)) plot_list[[length(plot_list) + 1L]] <- p
     }
@@ -806,41 +932,13 @@ server <- function(input, output, session) {
     # during a violence-type switch and the device dimensions are invalid.
     tryCatch({
       grid::grid.newpage()
-      if (narrow_sub) {
-        layout_mat <- grid::grid.layout(2, 1, heights = grid::unit(c(72, 28), "null"))
-        grid::pushViewport(grid::viewport(layout = layout_mat))
-        grid::pushViewport(grid::viewport(
-          layout.pos.row = 1, layout.pos.col = 1,
-          layout = grid::grid.layout(nrow, ncol)
-        ))
-        for (i in seq_along(plot_list)) {
-          row <- (i - 1L) %/% ncol + 1L
-          col <- (i - 1L) %% ncol + 1L
-          print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
-        }
-        grid::popViewport()
-        grid::pushViewport(grid::viewport(layout.pos.row = 2, layout.pos.col = 1))
-        draw_legend_with_footnotes(legend_grob, build_footnote_lines(violence_type, "past_year", stat_type))
-        grid::popViewport()
-        grid::popViewport()
-      } else {
-        layout_mat <- grid::grid.layout(1, 2, widths = grid::unit(c(80, 20), "null"))
-        grid::pushViewport(grid::viewport(layout = layout_mat))
-        grid::pushViewport(grid::viewport(
-          layout.pos.row = 1, layout.pos.col = 1,
-          layout = grid::grid.layout(nrow, ncol)
-        ))
-        for (i in seq_along(plot_list)) {
-          row <- (i - 1L) %/% ncol + 1L
-          col <- (i - 1L) %% ncol + 1L
-          print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
-        }
-        grid::popViewport()
-        grid::pushViewport(grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
-        draw_legend_with_footnotes(legend_grob, build_footnote_lines(violence_type, "past_year", stat_type))
-        grid::popViewport()
-        grid::popViewport()
+      grid::pushViewport(grid::viewport(layout = grid::grid.layout(nrow, ncol)))
+      for (i in seq_along(plot_list)) {
+        row <- (i - 1L) %/% ncol + 1L
+        col <- (i - 1L) %% ncol + 1L
+        print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
       }
+      grid::popViewport()
     }, error = function(e) {
       # Suppress transient device-size errors; Shiny will re-render once the
       # container has settled at its correct dimensions.
