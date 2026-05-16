@@ -61,3 +61,5 @@ eda.ipynb
 .Renviron
 .DS_Store
 *.example
+data/
+raw_data/
