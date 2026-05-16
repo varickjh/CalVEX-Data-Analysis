@@ -3,17 +3,75 @@ library(bslib)
 library(markdown) # for shinyapps.io deployment
 
 ui <- page_sidebar(
-  # page title
-  title = "CalVEX Analysis",
+  fillable = TRUE,
+  fillable_mobile = TRUE,
+  # trigger a resize once Shiny finishes its first render so plot fills the container height
+  tags$head(
+    tags$script(HTML(
+      "$(document).one('shiny:idle', function() {
+        setTimeout(function() { $(window).trigger('resize'); }, 10);
+      });"
+    )),
+    tags$style(HTML("
+      .bslib-page-sidebar > .main { display: flex; flex-direction: column; min-height: 0; }
+      .calvex-plot-wrap {
+        min-height: 280px;
+        height: calc(100dvh - 80px);
+        height: calc(100vh - 80px);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .calvex-plot-inner {
+        position: relative;
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .calvex-plot-wrap .shiny-plot-output {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      @media (max-width: 768px) {
+        .calvex-plot-wrap {
+          max-height: min(520px, calc(100dvh - 120px));
+          max-height: min(520px, calc(100vh - 120px));
+        }
+      }
+      @media (max-width: 576px) {
+        .calvex-plot-wrap {
+          max-height: min(420px, calc(100dvh - 140px));
+          max-height: min(420px, calc(100vh - 140px));
+        }
+      }
+      label.control-label { font-weight: 600; }
+      .accordion-button { font-weight: 600; }
+    "))
+  ),
 
-  # sidebar Layout 
+  # page title
+  title = "California Violence Experiences (CalVEX) Online Data Visualization Tool",
+
+  # sidebar Layout
   sidebar = sidebar(
-    
+    open = list(desktop = "open", mobile = "closed"),
+    collapsible = TRUE,
+
+    # graph time selection: Lifetime or Past Year
+    selectInput("time_period", "Time Period:",
+      choices = list("Lifetime" = "lifetime",
+                  "Past Year" = "past_year"),
+      selected = "past_year"
+    ),
+
     # graph select violence type
     selectInput("violence", "Violence Type:",
       choices = list("Physical Violence" = "physical",
                   "Sexual Violence" = "sexual",
-                  "Intimate Partner Violence" = "ipv"),
+                  "Intimate Partner Violence" = "ipv",
+                  "Sexual Violence Perpetration" = "sexual_perp",
+                  "Physical Violence Perpetration" = "physical_perp"),
       selected = "physical"
     ),
 
@@ -24,10 +82,17 @@ ui <- page_sidebar(
         "Race/Ethnicity" = "RACE_5",
         "Sexuality" = "LGB_3",
         "Income Quintile" = "INCOME_QUINTILE",
-        "Education Level" = "EDUC_4",
+        "Education Level" = "EDUC5",
         "Employment Status" = "EMPLOY_2",
         "Disability Status" = "DISABILITY"),
       selected = "GENDER"
+    ),
+
+    selectInput(
+      "chart_type",
+      "Chart Type:",
+      choices = list("Bar chart" = "bar", "Line chart" = "line"),
+      selected = "bar"
     ),
 
     # graph select percentage vs. count
@@ -37,7 +102,25 @@ ui <- page_sidebar(
       selected = "percent"
     ),
 
+    # overall toggle (applies to all demographic types)
+    checkboxInput(
+      "overall",
+      "Overall (all respondents)",
+      value = TRUE
+    ),
+
+    # show past-year subcategory plots (only when Past Year and not IPV)
+    conditionalPanel(
+      condition = "input.time_period == 'past_year' && input.violence != 'ipv'",
+      checkboxInput(
+        "show_subcategories",
+        "Show subcategories",
+        value = FALSE
+      )
+    ),
+
     accordion(
+      open = FALSE,
       # accordion panel: Demographic Information
       accordion_panel(
         "Demographic Specifics",
@@ -46,13 +129,11 @@ ui <- page_sidebar(
         checkboxGroupInput(
           "GENDER", "Gender Identity:",
           choices = list(
-            "Woman" = 1,
-            "Man" = 2,
-            "Non-binary / Genderqueer / Gender fluid" = 3,
-            "Prefer to self describe" = 4,
-            "Prefer not to say" = 98
+            "Female" = 1,
+            "Male" = 2,
+            "Gender non-conforming" = 3
           ),
-          selected = list(1, 2, 3, 4, 98)
+          selected = list(1, 2, 3)
         ),
 
         # checkbox selection for self-described sexuality; LGB_3
@@ -61,10 +142,9 @@ ui <- page_sidebar(
           choices = list(
             "Lesbian / Gay" = 1,
             "Straight" = 2,
-            "Bisexual / other identity" = 3,
-            "Prefer not to say" = 98
+            "Bisexual / other identity" = 3
           ),
-          selected = list(1, 2, 3, 98)
+          selected = list(1, 2, 3)
         ),
 
         # checkbox selection for age; AGE_6
@@ -107,18 +187,20 @@ ui <- page_sidebar(
           selected = list(1, 2, 3, 4, 5)
         ),
 
-        # checkbox selection for education level; EDUC_4
+        # checkbox selection for education level; EDUC5
         checkboxGroupInput(
-          "EDUC_4", "Education Level:",
+          "EDUC5", "Education Level:",
           choices = list(
             "Less than High School" = 1,
             "High School Graduate / Some College" = 2,
             "Bachelor's Degree" = 3,
-            "Master's Degree" = 4
+            "Master's Degree" = 4,
+            "Post-Graduate/Professional Degree" = 5
           ), 
-          selected = list(1, 2, 3, 4)
+          selected = list(1, 2, 3, 4, 5)
         ),
-        #checkbox selection for employment status; EMPLOY_2
+
+        # checkbox selection for employment status; EMPLOY_2
         checkboxGroupInput(
           "EMPLOY_2", "Employment Status:",
           choices = list(
@@ -127,13 +209,14 @@ ui <- page_sidebar(
           ),
           selected = list(1, 2)
         ),
-        #checkbox selection for disability status; DISABILITY
+
+        # checkbox selection for disability status; DISABILITY
         checkboxGroupInput(
           "DISABILITY", "Disability Status:",
           choices = list(
             "No Disability" = 0,
             "Has Disability" = 1
-          ), 
+          ),
           selected = list(0, 1)
         ),
       ),
@@ -142,41 +225,85 @@ ui <- page_sidebar(
       accordion_panel(
         "Time & Location",
 
-        # checkbox selection for year data was recorded; YEAR
-        conditionalPanel(
-          condition = "input.violence != 'ipv'",
-          checkboxGroupInput(
-            "YEAR", "YEAR:",
-            choices = list(
-              "2025" = 2025,
-              "2023" = 2023,
-              "2022" = 2022,
-              "2021" = 2021,
-              "2020" = 2020
-            ),
-            selected = list(2023, 2022, 2021, 2020)
-          )
+        checkboxGroupInput(
+          "YEAR", "Survey Year:",
+          choices  = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
+          selected = c(2025, 2023, 2022, 2021, 2020)
         ),
-        
-        conditionalPanel(
-          condition = "input.violence == 'ipv'",
-          checkboxGroupInput(
-            "YEAR", "YEAR:",
-            choices = list(
-              "2025" = 2025,
-              "2023" = 2023,
-              "2020" = 2020
-            ),
-            selected = list(2023, 2020)
-          )
+
+        checkboxGroupInput(
+          "CA_REGION",
+          "California Region:",
+          choices = list(
+            "Bay Region" = 1,
+            "Central Valley" = 2,
+            "Mountain Valley" = 3,
+            "Northern" = 4,
+            "Southern" = 5
+          ),
+          selected = list(1, 2, 3, 4, 5)
+        ),
+        helpText(
+          style = "font-size: 0.82rem;",
+          "Region filter applies to years with region data; respondents with missing region are excluded when filtering."
+        )
+      ),
+
+      accordion_panel(
+        "Notes & Citations",
+        tags$ul(
+          style = "font-size: 0.92rem; padding-left: 1.1rem;",
+          tags$li("All data are weighted."),
+          tags$li(
+            "Interpret proportions and percentages with caution when the cell size is less than 50."
+          ),
+          tags$li(
+            "We cannot assume that differences are statistically significant; see reports for significance levels."
+          ),
+          tags$li("Raw data can be accessed in full datasets on OpenICPSR."),
+          tags$li("Charts can be saved by pressing Ctrl+S or can be opened in a new tab."),
+          tags$li("On default, the app will show data for all years and regions."),
         )
       )
     ),
   ),
-  
 
-  # main Panel
-  plotOutput("histogram")
 
+  # main Panel: single plot or side-by-side subcategory plots
+  conditionalPanel(
+    condition = "!input.show_subcategories || input.time_period != 'past_year' || input.violence == 'ipv'",
+    div(
+      class = "calvex-plot-wrap",
+      div(
+        class = "calvex-plot-inner",
+        plotOutput(
+          "histogram",
+          height = "100%"
+        )
+      ),
+      uiOutput("footnotes_html")
+    )
+  ),
+  conditionalPanel(
+    condition = "input.show_subcategories && input.time_period == 'past_year' && input.violence != 'ipv'",
+    tagList(
+      uiOutput("subcategory_plots_ui"),
+      uiOutput("footnotes_html_sub")
+    )
+  ),
+
+  tags$footer(
+    style = paste(
+      "padding: 10px 16px; font-size: 0.88rem; color: #444;",
+      "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+    ),
+    HTML(
+      paste0(
+        "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+        "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+        "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+        "www.vexdata.org/data/caldashboard</a>."
+      )
+    )
+  )
 )
-

@@ -56,3 +56,8 @@ CalVEX2021_Codebook.xlsx
 CalVEX2022_Codebook.xlsx
 CalVEX2023_Codebook&SimpleFrequencies.xlsx
 eda.ipynb
+/ignore
+.Renviron.example
+.Renviron
+.DS_Store
+*.example
