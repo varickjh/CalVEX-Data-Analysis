@@ -60,8 +60,9 @@ ui <- page_sidebar(
 
     # graph time selection: Lifetime or Past Year
     selectInput("time_period", "Time Period:",
-      choices = list("Lifetime" = "lifetime",
-                  "Past Year" = "past_year"),
+      # choices = list("Lifetime" = "lifetime",
+      #             "Past Year" = "past_year"),
+      choices = list("Past Year" = "past_year"),
       selected = "past_year"
     ),
 
@@ -250,7 +251,7 @@ ui <- page_sidebar(
       ),
 
       accordion_panel(
-        "Notes & Citations",
+        "Notes",
         tags$ul(
           style = "font-size: 0.92rem; padding-left: 1.1rem;",
           tags$li("All data are weighted."),
@@ -263,6 +264,20 @@ ui <- page_sidebar(
           tags$li("Raw data can be accessed in full datasets on OpenICPSR."),
           tags$li("Charts can be saved by pressing Ctrl+S or can be opened in a new tab."),
           tags$li("On default, the app will show data for all years and regions."),
+        )
+      ),
+      tags$footer(
+        style = paste(
+          "padding: 10px 16px; font-size: 0.88rem; color: #444;",
+          "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+        ),
+        HTML(
+          paste0(
+            "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+            "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+            "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+            "www.vexdata.org/data/caldashboard</a>."
+          )
         )
       )
     ),
@@ -292,18 +307,18 @@ ui <- page_sidebar(
     )
   ),
 
-  tags$footer(
-    style = paste(
-      "padding: 10px 16px; font-size: 0.88rem; color: #444;",
-      "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
-    ),
-    HTML(
-      paste0(
-        "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
-        "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
-        "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
-        "www.vexdata.org/data/caldashboard</a>."
-      )
-    )
-  )
+  # tags$footer(
+  #   style = paste(
+  #     "padding: 10px 16px; font-size: 0.88rem; color: #444;",
+  #     "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+  #   ),
+  #   HTML(
+  #     paste0(
+  #       "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+  #       "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+  #       "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+  #       "www.vexdata.org/data/caldashboard</a>."
+  #     )
+  #   )
+  # )
 )

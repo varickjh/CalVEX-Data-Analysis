@@ -1,5 +1,6 @@
 library(shiny)
 
+# for local testing
 if (file.exists(".Renviron")) readRenviron(".Renviron")
 
 source("ui.R", encoding = "UTF-8")

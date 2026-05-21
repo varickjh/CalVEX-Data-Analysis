@@ -292,16 +292,15 @@ server <- function(input, output, session) {
         identical(time_period, "past_year") && identical(stat_type, "percent")) {
       lines <- c(
         lines,
-        "* Past-year percent axis is truncated at 60% for readability; percentages are out of 100%"
+        "* Past-year subcategory percent axes are scaled per chart to its highest value; percentages are out of 100%"
       )
     }
     lines
   }
 
-  # Build one chart (bar or line) for a given violence column (subcategory panel)
-  make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
-                            show_overall, demographic_labels, graph_labels,
-                            show_legend = TRUE, chart_type = "bar") {
+  # Summarise one subcategory column (shared by limit computation and plotting)
+  prepare_subcategory_summary <- function(df, violence_col, demographic, stat_type,
+                                        show_overall, demographic_labels) {
     if (!violence_col %in% names(df)) return(NULL)
     summary_df <- df %>%
       group_by(data_year, .data[[demographic]]) %>%
@@ -358,30 +357,132 @@ server <- function(input, output, session) {
       summary_df[[demographic]] <- factor(dch, levels = final_levels)
     }
 
-    # subcategory plots are always past-year, so cap percent scale at 50%
     if (stat_type == "percent") {
       summary_df <- summary_df %>%
         mutate(
           value = violence_percent,
-          label = paste0(round(violence_percent, 1), "%"),
-          denom_value = 50
+          label = paste0(round(violence_percent, 1), "%")
         )
-      y_lab <- "Percent Experiencing Violence"
-      ylim_max <- 53
     } else {
       summary_df <- summary_df %>%
         mutate(
           value = violence_count,
-          label = violence_count,
-          denom_value = n_total
+          label = as.character(violence_count)
         )
+    }
+    summary_df
+  }
+
+  # Per-panel y-axis from the tallest bar in that subcategory chart
+  # compute_panel_subcategory_limits <- function(panel_max, stat_type) {
+  #   if (identical(stat_type, "percent")) {
+  #     if (is.na(panel_max) || !is.finite(panel_max) || panel_max <= 0) {
+  #       return(list(scale_max = 20, ylim_max = 23, truncated = TRUE))
+  #     }
+  #     if (panel_max <= 50) {
+  #       scale_max <- max(10, ceiling(panel_max / 5) * 5)
+  #     } else {
+  #       scale_max <- min(100, ceiling(panel_max / 10) * 10)
+  #     }
+  #     ylim_max <- min(107, scale_max + max(5, round(scale_max * 0.1)))
+  #     list(scale_max = scale_max, ylim_max = ylim_max, truncated = scale_max < 100)
+  #   } else {
+  #     if (is.na(panel_max) || !is.finite(panel_max) || panel_max <= 0) {
+  #       return(list(scale_max = NULL, ylim_max = 1, truncated = FALSE))
+  #     }
+  #     list(scale_max = NULL, ylim_max = max(1, panel_max * 1.15), truncated = FALSE)
+  #   }
+  # }
+
+  # Uniform y-axis across all subcategory panels (highest bar in any chart).
+  # Uncomment this and the UNIFORM block in output$subcategory_plots to restore.
+  compute_shared_subcategory_limits <- function(global_max, stat_type) {
+    if (identical(stat_type, "percent")) {
+      if (is.na(global_max) || !is.finite(global_max) || global_max <= 0) {
+        return(list(scale_max = 20, ylim_max = 23, truncated = TRUE))
+      }
+      if (global_max <= 50) {
+        scale_max <- max(10, ceiling(global_max / 5) * 5)
+      } else {
+        scale_max <- min(100, ceiling(global_max / 10) * 10)
+      }
+      ylim_max <- min(107, scale_max + max(5, round(scale_max * 0.1)))
+      list(scale_max = scale_max, ylim_max = ylim_max, truncated = scale_max < 100)
+    } else {
+      if (is.na(global_max) || !is.finite(global_max) || global_max <= 0) {
+        return(list(scale_max = NULL, ylim_max = 1, truncated = FALSE))
+      }
+      list(scale_max = NULL, ylim_max = max(1, global_max * 1.15), truncated = FALSE)
+    }
+  }
+
+  percent_axis_breaks <- function(scale_max) {
+    step <- if (scale_max <= 25) 5 else if (scale_max <= 50) 10 else 20
+    seq(0, scale_max, by = step)
+  }
+
+  # Build one chart (bar or line) for a given violence column (subcategory panel)
+  make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
+                            show_overall, demographic_labels, graph_labels,
+                            show_legend = TRUE, chart_type = "bar",
+                            ylim_max = NULL, scale_max = NULL,
+                            summary_df = NULL) {
+    if (is.null(summary_df)) {
+      summary_df <- prepare_subcategory_summary(
+        df, violence_col, demographic, stat_type, show_overall, demographic_labels
+      )
+    }
+    if (is.null(summary_df) || nrow(summary_df) == 0) return(NULL)
+
+    if (stat_type == "percent") {
+      denom_scale <- if (!is.null(scale_max)) scale_max else 50
+      summary_df <- summary_df %>%
+        mutate(denom_value = denom_scale)
+      y_lab <- "Percent Experiencing Violence (%)"
+      if (is.null(ylim_max)) ylim_max <- denom_scale + 3
+      truncated_percent <- !is.null(scale_max) && scale_max < 100
+    } else {
+      summary_df <- summary_df %>%
+        mutate(denom_value = n_total)
       y_lab <- "Number Experiencing Violence"
-      ylim_max <- max(summary_df$n_total, na.rm = TRUE) * 1.15
+      if (is.null(ylim_max)) {
+        ylim_max <- max(summary_df$value, na.rm = TRUE) * 1.15
+        if (!is.finite(ylim_max) || ylim_max <= 0) ylim_max <- 1
+      }
+      truncated_percent <- FALSE
     }
 
     fill_levels <- levels(summary_df[[demographic]])
     fill_values <- demographic_fill_values(demographic, fill_levels)
     x_breaks <- sort(unique(as.integer(summary_df$data_year)))
+
+    apply_percent_scale <- function(p, is_bar = FALSE) {
+      if (!truncated_percent) {
+        return(p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02))))
+      }
+      denom_scale <- scale_max
+      breaks <- percent_axis_breaks(denom_scale)
+      annotate_x <- if (is_bar) mean(seq_along(x_breaks)) else mean(x_breaks)
+      p <- p +
+        {if (is_bar) geom_hline(yintercept = denom_scale, color = "gray80", linewidth = 0.35) else NULL} +
+        annotate(
+          "text",
+          x = annotate_x,
+          y = denom_scale + ylim_max * 0.04,
+          label = "\u2192 100%",
+          size = 3.5,
+          color = "gray35",
+          fontface = "italic"
+        ) +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          breaks = breaks,
+          expand = ggplot2::expansion(mult = c(0, 0))
+        ) +
+        coord_cartesian(clip = "off") +
+        theme(plot.margin = ggplot2::margin(8, 8, 16, 8))
+      p
+    }
 
     if (identical(chart_type, "line")) {
       p <- ggplot(summary_df, aes(
@@ -398,24 +499,28 @@ server <- function(input, output, session) {
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = plot_title) +
         plot_calvex_theme(if (show_legend) "bottom" else "none") +
         theme(legend.direction = "horizontal")
-      p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      if (truncated_percent) {
+        p <- apply_percent_scale(p, is_bar = FALSE)
+      } else {
+        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      }
     } else {
       p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]])) +
-        geom_col(
-          aes(y = .data$denom_value),
-          position = position_dodge(width = 0.85),
-          alpha = 0.3,
-          width = 0.72,
-          show.legend = FALSE
-        ) +
-        geom_text(
-          aes(y = .data$denom_value, label = paste0(.data$n_total)),
-          vjust = -0.35,
-          position = position_dodge(width = 0.85),
-          size = 4,
-          color = "gray40",
-          show.legend = FALSE
-        ) +
+        # geom_col(
+        #   aes(y = .data$denom_value),
+        #   position = position_dodge(width = 0.85),
+        #   alpha = 0.3,
+        #   width = 0.72,
+        #   show.legend = FALSE
+        # ) +
+        # geom_text(
+        #   aes(y = .data$denom_value, label = paste0(.data$n_total)),
+        #   vjust = -0.35,
+        #   position = position_dodge(width = 0.85),
+        #   size = 4,
+        #   color = "gray40",
+        #   show.legend = FALSE
+        # ) +
         geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
         geom_text(
           aes(y = .data$value, label = .data$label),
@@ -426,8 +531,12 @@ server <- function(input, output, session) {
         ) +
         scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
         labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = plot_title) +
-        plot_calvex_theme() +
-        scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+        plot_calvex_theme()
+      if (truncated_percent) {
+        p <- apply_percent_scale(p, is_bar = TRUE)
+      } else {
+        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      }
     }
 
     if (!show_legend) {
@@ -598,7 +707,7 @@ server <- function(input, output, session) {
           label = paste0(round(violence_percent, 1), "%"),
           denom_value = scale_max
         )
-      y_lab <- "Percent Experiencing Violence"
+      y_lab <- "Percent Experiencing Violence (%)"
     } else {
       summary_df <- summary_df %>%
         mutate(
@@ -775,8 +884,31 @@ server <- function(input, output, session) {
 
     chart_type <- input$chart_type
 
+    summaries <- lapply(config, function(item) {
+      prepare_subcategory_summary(
+        df, item$col, demographic, stat_type, show_overall, demographic_labels
+      )
+    })
+    valid_summaries <- summaries[!vapply(summaries, is.null, logical(1L))]
+    req(length(valid_summaries) > 0)
+
+    # UNIFORM: one y-axis for all panels from the highest bar in any subcategory chart.
+    global_max <- max(
+      vapply(valid_summaries, function(s) max(s$value, na.rm = TRUE), numeric(1)),
+      na.rm = TRUE
+    )
+    limits <- compute_shared_subcategory_limits(global_max, stat_type)
+
     plot_list <- list()
+    plot_idx <- 0L
     for (i in seq_along(config)) {
+      s <- summaries[[i]]
+      if (is.null(s)) next
+      plot_idx <- plot_idx + 1L
+      # PER-PANEL: scale each chart to its own tallest bar
+      # panel_max <- max(s$value, na.rm = TRUE)
+      # limits <- compute_panel_subcategory_limits(panel_max, stat_type)
+      # UNIFORM: use shared limits instead — ylim_max = limits$ylim_max, scale_max = limits$scale_max
       p <- make_one_plot(
         df,
         violence_col = config[[i]]$col,
@@ -786,8 +918,11 @@ server <- function(input, output, session) {
         show_overall = show_overall,
         demographic_labels = demographic_labels,
         graph_labels = graph_labels,
-        show_legend = identical(i, 1L),
-        chart_type = chart_type
+        show_legend = identical(plot_idx, 1L),
+        chart_type = chart_type,
+        ylim_max = limits$ylim_max,
+        scale_max = limits$scale_max,
+        summary_df = s
       )
       if (!is.null(p)) plot_list[[length(plot_list) + 1L]] <- p
     }
