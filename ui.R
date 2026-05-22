@@ -166,11 +166,11 @@ ui <- page_sidebar(
         checkboxGroupInput(
           "RACE_5", "Race / Ethnicity:",
           choices = list(
-            "White, NH" = 1,
-            "Black, NH" = 2,
-            "Asian, NH" = 3,
+            "White, Non-Hispanic" = 1,
+            "Black, Non-Hispanic" = 2,
+            "Asian, Non-Hispanic" = 3,
             "Hispanic" = 4,
-            "Other/multiple races, NH" = 5
+            "Other/multiple races, Non-Hispanic" = 5
           ),
           selected = list(1, 2, 3, 4, 5)
         ),

@@ -92,22 +92,22 @@ server <- function(input, output, session) {
   )
   # race labels (graph)
   race_labels <- c(
-    "1" = "White, NH",
-    "2" = "Black, NH",
-    "3" = "Asian, NH",
+    "1" = "White, Non-Hispanic",
+    "2" = "Black, Non-Hispanic",
+    "3" = "Asian, Non-Hispanic",
     "4" = "Hispanic",
-    "5" = "Other/multiple races, NH"
+    "5" = "Other/multiple races, Non-Hispanic"
   )
   # legend labels
   graph_labels <- c(
-  "GENDER" = "GENDER (Gender)",
-  "AGE_6" = "AGE_6 (Age)",
-  "RACE_5" = "RACE_5 (Race/Ethnicity)",
-  "LGB_3" = "LGB_3 (Sexuality)",
-  "INCOME_QUINTILE" = "INCOME_QUINTILE (Income Quintile)",
-  "EDUC5" = "EDUC5 (Education Level)",
-  "EMPLOY_2" = "EMPLOY_2 (Employment Status)",
-  "DISABILITY" = "DISABILITY (Disability Status)"
+  "GENDER" = "Gender",
+  "AGE_6" = "Age",
+  "RACE_5" = "Race/Ethnicity",
+  "LGB_3" = "Sexuality",
+  "INCOME_QUINTILE" = "Income Quintile",
+  "EDUC5" = "Education Level",
+  "EMPLOY_2" = "Employment Status",
+  "DISABILITY" = "Disability Status"
   )
 
   # map demographic variable name -> code-to-label vector (for filtering which bars to show)
@@ -462,7 +462,7 @@ server <- function(input, output, session) {
       }
       denom_scale <- scale_max
       breaks <- percent_axis_breaks(denom_scale)
-      annotate_x <- if (is_bar) mean(seq_along(x_breaks)) else mean(x_breaks)
+      annotate_x <- mean(seq_along(x_breaks))
       p <- p +
         {if (is_bar) geom_hline(yintercept = denom_scale, color = "gray80", linewidth = 0.35) else NULL} +
         annotate(
@@ -485,6 +485,9 @@ server <- function(input, output, session) {
     }
 
     if (identical(chart_type, "line")) {
+      summary_df <- summary_df %>%
+        mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
+        arrange(.data$data_year, .data[[demographic]])
       p <- ggplot(summary_df, aes(
         x = .data$data_year,
         y = .data$value,
@@ -495,7 +498,6 @@ server <- function(input, output, session) {
         geom_point(size = 3) +
         geom_text(aes(label = .data$label), vjust = -0.75, size = 4, show.legend = FALSE) +
         scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
-        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = plot_title) +
         plot_calvex_theme(if (show_legend) "bottom" else "none") +
         theme(legend.direction = "horizontal")
@@ -733,6 +735,9 @@ server <- function(input, output, session) {
     leg_pos_main <- if (narrow) "bottom" else "right"
 
     if (identical(chart_type, "line")) {
+      summary_df <- summary_df %>%
+        mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
+        arrange(.data$data_year, .data[[demographic]])
       p <- ggplot(summary_df, aes(
         x = .data$data_year,
         y = .data$value,
@@ -743,7 +748,6 @@ server <- function(input, output, session) {
         geom_point(size = 3.2) +
         geom_text(aes(label = .data$label), vjust = -0.8, size = 4.2, show.legend = FALSE) +
         scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
-        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = main_title) +
         plot_calvex_theme(leg_pos_main) +
         theme(legend.direction = if (narrow) "horizontal" else "vertical")
@@ -752,7 +756,7 @@ server <- function(input, output, session) {
         p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35) +
           annotate(
             "text",
-            x = mean(x_breaks),
+            x = mean(seq_along(x_breaks)),
             y = 62.5,
             label = "\u2192 100%",
             size = 3.8,

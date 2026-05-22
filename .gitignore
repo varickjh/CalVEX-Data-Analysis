@@ -63,3 +63,5 @@ eda.ipynb
 *.example
 data/
 raw_data/
+Rplots.pdf
+/.R_libs
