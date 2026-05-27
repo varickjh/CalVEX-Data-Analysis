@@ -48,21 +48,28 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-# Folders to ignore
-helper_folder/
-calvex_venv/
-CalVEX2020_Codebook.xlsx
-CalVEX2021_Codebook.xlsx
-CalVEX2022_Codebook.xlsx
-CalVEX2023_Codebook&SimpleFrequencies.xlsx
-eda.ipynb
-\[A164\] UCSD_Tulane_CalVEX Survey 2025_Final Data.dta
+# Operating system files
 .DS_Store
-ignore/supabase_data_+_shiny_deploy_2ba1634e.plan.md
-ignore/dashboard_ux_and_responsiveness_d2419f93.plan.md
-ignore/CalVEX 2025 Prepared.dta
-/.R_libs
-.Renviron.example
-/ignore
-HOVER-TOOLTIP-HANDOVER.md
+
+# Virtual environments and local libraries
+calvex_venv/
+.R_libs/
+
+# Environment variables and configuration secrets
+.Renviron
+
+# Data directories and local ignores
+ignore/
+data/
+raw_data/
+
+# Large data files and codebooks
+*.dta
+*.xlsx
+
+# Graphics and output files
 Rplots.pdf
+
+.Renviron.example
+HOVER-TOOLTIP-HANDOVER.md
+manifest.json
