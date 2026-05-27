@@ -268,8 +268,7 @@ ui <- page_sidebar(
       ),
       tags$footer(
         style = paste(
-          "padding: 10px 16px; font-size: 0.88rem; color: #444;",
-          "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+          "padding: clamp(6px, 1.5vw, 10px) clamp(10px, 3vw, 16px); font-size: 0.75rem; color: #444;"
         ),
         HTML(
           paste0(
@@ -322,3 +321,4 @@ ui <- page_sidebar(
   #   )
   # )
 )
+
