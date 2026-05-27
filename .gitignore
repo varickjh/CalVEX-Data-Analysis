@@ -61,3 +61,8 @@ eda.ipynb
 ignore/supabase_data_+_shiny_deploy_2ba1634e.plan.md
 ignore/dashboard_ux_and_responsiveness_d2419f93.plan.md
 ignore/CalVEX 2025 Prepared.dta
+/.R_libs
+.Renviron.example
+/ignore
+HOVER-TOOLTIP-HANDOVER.md
+Rplots.pdf

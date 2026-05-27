@@ -2,191 +2,58 @@ library(shiny)
 library(dplyr)
 library(ggplot2)
 library(grid)
+library(httr)
+library(jsonlite)
 
 server <- function(input, output, session) {
-  
-  # data organization
-  calvex2025 <- read.csv("data/CalVEX2025.csv")
-  calvex2023 <- read.csv("data/CalVEX2023.csv")
-  calvex2022 <- read.csv("data/CalVEX2022.csv")
-  calvex2021 <- read.csv("data/CalVEX2021.csv")
-  calvex2020 <- read.csv("data/CalVEX2020.csv")
 
-  # normalize year-specific IPV columns into shared schema
-  if ("IPV22_EVER" %in% names(calvex2023)) {
-    names(calvex2023)[names(calvex2023) == "IPV22_EVER"] <- "ipv_ever"
-  }
-  if ("IPV22_YEAR" %in% names(calvex2023)) {
-    names(calvex2023)[names(calvex2023) == "IPV22_YEAR"] <- "ipv_year"
-  }
-  if ("IPV25_EVER" %in% names(calvex2025)) {
-    names(calvex2025)[names(calvex2025) == "IPV25_EVER"] <- "ipv_ever"
-  }
-  if ("IPV25_YEAR" %in% names(calvex2025)) {
-    names(calvex2025)[names(calvex2025) == "IPV25_YEAR"] <- "ipv_year"
-  }
-
-  # normalize 2025-specific column names into app schema
-  if (!("data_year" %in% names(calvex2025))) {
-    calvex2025$data_year <- 2025
-  }
-  if ("WEIGHT_CA" %in% names(calvex2025)) {
-    names(calvex2025)[names(calvex2025) == "WEIGHT_CA"] <- "WEIGHT"
-  }
-  if (!("INCOME_QUINTILE" %in% names(calvex2025)) && "INCOME_QUINTILE1" %in% names(calvex2025)) {
-    names(calvex2025)[names(calvex2025) == "INCOME_QUINTILE1"] <- "INCOME_QUINTILE"
-  }
-  if (!("EDUC_4" %in% names(calvex2025)) && "EDUC5" %in% names(calvex2025)) {
-    educ5_num <- suppressWarnings(as.numeric(calvex2025$EDUC5))
-    # Collapse 5-category education coding into the app's 4-category scheme.
-    # 5th category is merged into 4 (highest education).
-    calvex2025$EDUC_4 <- dplyr::case_when(
-      is.na(educ5_num) ~ NA_real_,
-      educ5_num >= 5 ~ 4,
-      TRUE ~ educ5_num
-    )
-  }
-  if ("DISABILITY" %in% names(calvex2025)) {
-    disability_num <- suppressWarnings(as.numeric(calvex2025$DISABILITY))
-    # 2025 coding uses 1/2/98; app expects 1 = Has Disability, 0 = No Disability.
-    calvex2025$DISABILITY <- dplyr::case_when(
-      is.na(disability_num) ~ NA_real_,
-      disability_num == 2 ~ 0,
-      disability_num == 1 ~ 1,
-      TRUE ~ disability_num
-    )
-  }
-
-  # SV, PV, SV Perp, PV Perp (no standardization needed)
-  
-  # Rename gender columns to standard GENDER name
-  if ("GENDER_NEW" %in% names(calvex2025)) {
-    names(calvex2025)[names(calvex2025) == "GENDER_NEW"] <- "GENDER"
-  }
-  if ("GENDER_NEW" %in% names(calvex2023)) {
-    names(calvex2023)[names(calvex2023) == "GENDER_NEW"] <- "GENDER"
-  }
-  if ("GENDER2" %in% names(calvex2022)) {
-    names(calvex2022)[names(calvex2022) == "GENDER_2"] <- "GENDER"
-  } else if ("GENDER2" %in% names(calvex2022)) {
-    names(calvex2022)[names(calvex2022) == "GENDER_2"] <- "GENDER"
-  }
-  if ("GENDER2" %in% names(calvex2021)) {
-    names(calvex2021)[names(calvex2021) == "GENDER_2"] <- "GENDER"
-  } else if ("GENDER2" %in% names(calvex2021)) {
-    names(calvex2021)[names(calvex2021) == "GENDER_2"] <- "GENDER"
-  }
-  if ("GENDER2" %in% names(calvex2020)) {
-    names(calvex2020)[names(calvex2020) == "GENDER_2"] <- "GENDER"
-  } else if ("GENDER2" %in% names(calvex2020)) {
-    names(calvex2020)[names(calvex2020) == "GENDER_2"] <- "GENDER"
-  }
-
-  # California region: 2020–2023 use P_CA_REGION; 2025 uses CA_REGION — unify to CA_REGION
-  unify_ca_region <- function(df) {
-    if ("P_CA_REGION" %in% names(df)) {
-      if (!"CA_REGION" %in% names(df)) {
-        names(df)[names(df) == "P_CA_REGION"] <- "CA_REGION"
-      } else {
-        pr <- suppressWarnings(as.numeric(df$P_CA_REGION))
-        cr <- suppressWarnings(as.numeric(df$CA_REGION))
-        df$CA_REGION <- dplyr::coalesce(cr, pr)
-        df$P_CA_REGION <- NULL
-      }
-    }
-    df
-  }
-  calvex2020 <- unify_ca_region(calvex2020)
-  calvex2021 <- unify_ca_region(calvex2021)
-  calvex2022 <- unify_ca_region(calvex2022)
-  calvex2023 <- unify_ca_region(calvex2023)
-  calvex2025 <- unify_ca_region(calvex2025)
-
-  # isolate variables we are comparing (can change later) & combine into dataset
-  cols_needed <- c(
-    "GENDER",
-    "LGB_3",
-    "CA_REGION",
-    "AGE_6",
-    "RACE_5",
-    "pv_ever",
-    "pv_12mo",
-    "sv_ever",
-    "sv_12mo",
-    "ipv_ever",
-    "ipv_year",
-    "data_year",
-    "INCOME_QUINTILE",
-    "EDUC_4",
-    "EMPLOY_2",
-    "DISABILITY",
-    "sv_perp_ever",
-    "sv_perp_12mo",
-    "pv_perp_ever",
-    "pv_perp_12mo",
-    "WEIGHT",
-    # past-year subcategories (physical violence 12mo)
-    "pastyearpv1",
-    "pastyearpv2",
-    "pastyearpv3",
-    # past-year subcategories (sexual violence 12mo)
-    "pastyearsv1",
-    "pastyearsv2",
-    "pastyearsv3",
-    "pastyearsv4",
-    "pastyearsv5",
-    "pastyearsv6",
-    # past-year subcategories (SV perpetration)
-    "pastyearperpsv1",
-    "pastyearperpsv2",
-    "pastyearperpsv3",
-    "pastyearperpsv4",
-    "pastyearperpsv5",
-    "pastyearperpsv6",
-    # past-year subcategories (PV perpetration)
-    "pastyearperppv1",
-    "pastyearperppv2",
-    "pastyearperppv3"
+  # ---------------------------------------------------------------------------
+  # Data loading via Supabase Data API (PostgREST)
+  # PostgREST caps each response at 1000 rows, so we paginate in batches
+  # until the returned page is shorter than the batch size.
+  # Requires two env vars (set in .Renviron or the host environment):
+  #   SUPABASE_URL — Project URL, e.g. https://<project-ref>.supabase.co
+  #   SUPABASE_KEY — service_role secret key  (NEVER commit this to git)
+  # ---------------------------------------------------------------------------
+  .sb_base  <- paste0(Sys.getenv("SUPABASE_URL"), "/rest/v1/calvex_data")
+  .sb_hdrs  <- httr::add_headers(
+    apikey        = Sys.getenv("SUPABASE_KEY"),
+    Authorization = paste("Bearer", Sys.getenv("SUPABASE_KEY"))
   )
-
-  # ensure all placeholder columns exist for each year (create as NA if missing)
-  for (col in cols_needed) {
-    if (!col %in% names(calvex2025)) calvex2025[[col]] <- NA
-    if (!col %in% names(calvex2020)) calvex2020[[col]] <- NA
-    if (!col %in% names(calvex2021)) calvex2021[[col]] <- NA
-    if (!col %in% names(calvex2022)) calvex2022[[col]] <- NA
-    if (!col %in% names(calvex2023)) calvex2023[[col]] <- NA
+  .batch_size <- 1000L
+  .offset     <- 0L
+  .pages      <- list()
+  repeat {
+    resp <- httr::GET(
+      paste0(.sb_base, "?select=*&limit=", .batch_size, "&offset=", .offset),
+      .sb_hdrs
+    )
+    httr::stop_for_status(resp)
+    page <- jsonlite::fromJSON(httr::content(resp, "text", encoding = "UTF-8"))
+    .pages[[length(.pages) + 1L]] <- page
+    if (nrow(page) < .batch_size) break
+    .offset <- .offset + .batch_size
   }
+  calvex_data <- dplyr::bind_rows(.pages)
 
-  # now subset to the standardized set of columns
-  calvex2020 <- calvex2020[, cols_needed]
-  calvex2021 <- calvex2021[, cols_needed]
-  calvex2022 <- calvex2022[, cols_needed]
-  calvex2023 <- calvex2023[, cols_needed]
-  calvex2025 <- calvex2025[, cols_needed]
-  
-  calvex_data <- rbind(
-    calvex2025,
-    calvex2023,
-    calvex2022,
-    calvex2021,
-    calvex2020
-  )
-  
+  # Normalize "NA" strings (CSV→Supabase roundtrip artifact) to real R NA
+  # across all character columns so filters and factor conversions work cleanly.
+  calvex_data <- dplyr::mutate(calvex_data, dplyr::across(
+    where(is.character),
+    ~ dplyr::na_if(.x, "NA")
+  ))
+
   # lookup tables / labels for graph & legend
-  # gender labels (graph) - updated to match 2023 structure
   gender_labels <- c(
     "1" = "Female",
     "2" = "Male",
-    "3" = "Gender non-conforming",
-    "98" = "Prefer not to say"
+    "3" = "Gender non-conforming"
   )
   # sexuality labels (graph)
   sexuality_labels <- c(
     "1" = "Lesbian / Gay",
     "2" = "Straight",
-    "3" = "Bisexual / other identity",
-    "98" = "Prefer not to say"
+    "3" = "Bisexual / other identity"
   )
   # income labels (graph) 
   income_labels <- c(
@@ -201,7 +68,8 @@ server <- function(input, output, session) {
     "1" = "Less than High School",
     "2" = "High School Graduate / Some College",
     "3" = "Bachelor's Degree",
-    "4" = "Master's Degree"
+    "4" = "Master's Degree",
+    "5" = "Post-Graduate/Professional Degree"
   )
   # employment labels (graph)
   employment_labels <- c(
@@ -213,7 +81,6 @@ server <- function(input, output, session) {
     "0" = "No Disability",
     "1" = "Has Disability"
   )
- 
   # age labels (graph)
   age_labels <- c(
     "1" = "18–24",
@@ -225,22 +92,22 @@ server <- function(input, output, session) {
   )
   # race labels (graph)
   race_labels <- c(
-    "1" = "White, NH",
-    "2" = "Black, NH",
-    "3" = "Asian, NH",
+    "1" = "White, Non-Hispanic",
+    "2" = "Black, Non-Hispanic",
+    "3" = "Asian, Non-Hispanic",
     "4" = "Hispanic",
-    "5" = "Other/multiple races, NH"
+    "5" = "Other/multiple races, Non-Hispanic"
   )
   # legend labels
   graph_labels <- c(
-  "GENDER" = "GENDER (Gender)",
-  "AGE_6" = "AGE_6 (Age)",
-  "RACE_5" = "RACE_5 (Race/Ethnicity)",
-  "LGB_3" = "LGB_3 (Sexuality)",
-  "INCOME_QUINTILE" = "INCOME_QUINTILE (Income Quintile)",
-  "EDUC_4" = "EDUC_4 (Education Level)",
-  "EMPLOY_2" = "EMPLOY_2 (Employment Status)",
-  "DISABILITY" = "DISABILITY (Disability Status)"
+  "GENDER" = "Gender",
+  "AGE_6" = "Age",
+  "RACE_5" = "Race/Ethnicity",
+  "LGB_3" = "Sexuality",
+  "INCOME_QUINTILE" = "Income Quintile",
+  "EDUC5" = "Education Level",
+  "EMPLOY_2" = "Employment Status",
+  "DISABILITY" = "Disability Status"
   )
 
   # map demographic variable name -> code-to-label vector (for filtering which bars to show)
@@ -250,7 +117,7 @@ server <- function(input, output, session) {
     RACE_5 = race_labels,
     LGB_3 = sexuality_labels,
     INCOME_QUINTILE = income_labels,
-    EDUC_4 = education_labels,
+    EDUC5 = education_labels,
     EMPLOY_2 = employment_labels,
     DISABILITY = disability_labels
   )
@@ -290,36 +157,38 @@ server <- function(input, output, session) {
         axis.text = element_text(size = 12),
         legend.title = element_text(size = 13, face = "bold"),
         legend.text = element_text(size = 12),
-        plot.title = element_text(size = 15, face = "bold"),
+        plot.title = element_text(size = 20, face = "bold"),
         plot.caption = element_text(size = 10, color = "gray40"),
         legend.position = legend_pos
       )
   }
 
   # Dynamic year selector: choices depend on violence type (IPV = 2023/2025 only)
-  output$year_ui <- renderUI({
-    vt <- if (!is.null(input$violence)) input$violence else "physical"
+  observe({
+    vt <- input$violence
+    tp <- input$time_period
     if (identical(vt, "ipv")) {
-      checkboxGroupInput(
-        "YEAR", "Survey Year:",
-        choices = list("2025" = 2025, "2023" = 2023),
-        selected = list(2025, 2023)
+      updateCheckboxGroupInput(session, "YEAR",
+        choices  = list("2025" = 2025, "2023" = 2023),
+        selected = c(2025, 2023)
+      )
+    } else if (vt %in% c("sexual_perp", "physical_perp") && identical(tp, "past_year")) {
+      updateCheckboxGroupInput(session, "YEAR",
+        choices  = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021),
+        selected = c(2025, 2023, 2022, 2021)
       )
     } else {
-      checkboxGroupInput(
-        "YEAR", "Survey Year:",
-        choices = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
-        selected = list(2025, 2023, 2022, 2021, 2020)
+      updateCheckboxGroupInput(session, "YEAR",
+        choices  = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
+        selected = c(2025, 2023, 2022, 2021, 2020)
       )
     }
   })
 
-  # reactive subset
   filtered_data <- reactive({
     df <- calvex_data
-    time_period <- if (!is.null(input$time_period)) input$time_period else "lifetime"
+    time_period <- input$time_period
 
-    # time-aware filtering based on which violence variables actually exist
     if (!is.null(input$violence)) {
       # IPV is only available in 2023 and 2025
       if (input$violence == "ipv") {
@@ -348,8 +217,8 @@ server <- function(input, output, session) {
       df <- df[df$RACE_5 %in% suppressWarnings(as.numeric(input$RACE_5)), ]
     if (!is.null(input$INCOME_QUINTILE) && length(input$INCOME_QUINTILE) > 0)
       df <- df[df$INCOME_QUINTILE %in% suppressWarnings(as.numeric(input$INCOME_QUINTILE)), ]
-    if (!is.null(input$EDUC_4) && length(input$EDUC_4) > 0)
-      df <- df[df$EDUC_4 %in% suppressWarnings(as.numeric(input$EDUC_4)), ]
+    if (!is.null(input$EDUC5) && length(input$EDUC5) > 0)
+      df <- df[df$EDUC5 %in% suppressWarnings(as.numeric(input$EDUC5)), ]
     if (!is.null(input$EMPLOY_2) && length(input$EMPLOY_2) > 0)
       df <- df[df$EMPLOY_2 %in% suppressWarnings(as.numeric(input$EMPLOY_2)), ]
     if (!is.null(input$DISABILITY) && length(input$DISABILITY) > 0)
@@ -391,8 +260,8 @@ server <- function(input, output, session) {
       levels = names(income_labels),
       labels = income_labels
     )
-    df$EDUC_4 <- factor(
-      df$EDUC_4,
+    df$EDUC5 <- factor(
+      df$EDUC5,
       levels = names(education_labels),
       labels = education_labels
     )
@@ -406,7 +275,6 @@ server <- function(input, output, session) {
       levels = names(disability_labels),
       labels = disability_labels
     )
-   
     df
   })
 
@@ -416,24 +284,23 @@ server <- function(input, output, session) {
     if (violence_type == "ipv") {
       lines <- c(lines, "* IPV is only available in 2023 and 2025")
     } else if (violence_type == "sexual_perp") {
-      lines <- c(lines, "* sv_perp_12mo was not asked in 2020")
+      lines <- c(lines, "* Past year sexual violence perpetration was not asked in 2020")
     } else if (violence_type == "physical_perp") {
-      lines <- c(lines, "* pv_perp_12mo was not asked in 2020")
+      lines <- c(lines, "* Past year physical violence perpetration was not asked in 2020")
     }
     if (!is.null(time_period) && !is.null(stat_type) &&
         identical(time_period, "past_year") && identical(stat_type, "percent")) {
       lines <- c(
         lines,
-        "* Past-year percent axis is truncated at 60% for readability; percentages are out of 100%"
+        "* Past-year subcategory percent axes are scaled per chart to its highest value; percentages are out of 100%"
       )
     }
     lines
   }
 
-  # Build one chart (bar or line) for a given violence column (subcategory panel)
-  make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
-                            show_overall, demographic_labels, graph_labels,
-                            show_legend = TRUE, chart_type = "bar") {
+  # Summarise one subcategory column (shared by limit computation and plotting)
+  prepare_subcategory_summary <- function(df, violence_col, demographic, stat_type,
+                                        show_overall, demographic_labels) {
     if (!violence_col %in% names(df)) return(NULL)
     summary_df <- df %>%
       group_by(data_year, .data[[demographic]]) %>%
@@ -490,32 +357,137 @@ server <- function(input, output, session) {
       summary_df[[demographic]] <- factor(dch, levels = final_levels)
     }
 
-    # subcategory plots are always past-year, so cap percent scale at 50%
     if (stat_type == "percent") {
       summary_df <- summary_df %>%
         mutate(
           value = violence_percent,
-          label = paste0(round(violence_percent, 1), "%"),
-          denom_value = 50
+          label = paste0(round(violence_percent, 1), "%")
         )
-      y_lab <- "Percent Experiencing Violence"
-      ylim_max <- 53
     } else {
       summary_df <- summary_df %>%
         mutate(
           value = violence_count,
-          label = violence_count,
-          denom_value = n_total
+          label = as.character(violence_count)
         )
+    }
+    summary_df
+  }
+
+  # Per-panel y-axis from the tallest bar in that subcategory chart
+  # compute_panel_subcategory_limits <- function(panel_max, stat_type) {
+  #   if (identical(stat_type, "percent")) {
+  #     if (is.na(panel_max) || !is.finite(panel_max) || panel_max <= 0) {
+  #       return(list(scale_max = 20, ylim_max = 23, truncated = TRUE))
+  #     }
+  #     if (panel_max <= 50) {
+  #       scale_max <- max(10, ceiling(panel_max / 5) * 5)
+  #     } else {
+  #       scale_max <- min(100, ceiling(panel_max / 10) * 10)
+  #     }
+  #     ylim_max <- min(107, scale_max + max(5, round(scale_max * 0.1)))
+  #     list(scale_max = scale_max, ylim_max = ylim_max, truncated = scale_max < 100)
+  #   } else {
+  #     if (is.na(panel_max) || !is.finite(panel_max) || panel_max <= 0) {
+  #       return(list(scale_max = NULL, ylim_max = 1, truncated = FALSE))
+  #     }
+  #     list(scale_max = NULL, ylim_max = max(1, panel_max * 1.15), truncated = FALSE)
+  #   }
+  # }
+
+  # Uniform y-axis across all subcategory panels (highest bar in any chart).
+  # Uncomment this and the UNIFORM block in output$subcategory_plots to restore.
+  compute_shared_subcategory_limits <- function(global_max, stat_type) {
+    if (identical(stat_type, "percent")) {
+      if (is.na(global_max) || !is.finite(global_max) || global_max <= 0) {
+        return(list(scale_max = 20, ylim_max = 23, truncated = TRUE))
+      }
+      if (global_max <= 50) {
+        scale_max <- max(10, ceiling(global_max / 5) * 5)
+      } else {
+        scale_max <- min(100, ceiling(global_max / 10) * 10)
+      }
+      ylim_max <- min(107, scale_max + max(5, round(scale_max * 0.1)))
+      list(scale_max = scale_max, ylim_max = ylim_max, truncated = scale_max < 100)
+    } else {
+      if (is.na(global_max) || !is.finite(global_max) || global_max <= 0) {
+        return(list(scale_max = NULL, ylim_max = 1, truncated = FALSE))
+      }
+      list(scale_max = NULL, ylim_max = max(1, global_max * 1.15), truncated = FALSE)
+    }
+  }
+
+  percent_axis_breaks <- function(scale_max) {
+    step <- if (scale_max <= 25) 5 else if (scale_max <= 50) 10 else 20
+    seq(0, scale_max, by = step)
+  }
+
+  # Build one chart (bar or line) for a given violence column (subcategory panel)
+  make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
+                            show_overall, demographic_labels, graph_labels,
+                            show_legend = TRUE, chart_type = "bar",
+                            ylim_max = NULL, scale_max = NULL,
+                            summary_df = NULL) {
+    if (is.null(summary_df)) {
+      summary_df <- prepare_subcategory_summary(
+        df, violence_col, demographic, stat_type, show_overall, demographic_labels
+      )
+    }
+    if (is.null(summary_df) || nrow(summary_df) == 0) return(NULL)
+
+    if (stat_type == "percent") {
+      denom_scale <- if (!is.null(scale_max)) scale_max else 50
+      summary_df <- summary_df %>%
+        mutate(denom_value = denom_scale)
+      y_lab <- "Percent Experiencing Violence (%)"
+      if (is.null(ylim_max)) ylim_max <- denom_scale + 3
+      truncated_percent <- !is.null(scale_max) && scale_max < 100
+    } else {
+      summary_df <- summary_df %>%
+        mutate(denom_value = n_total)
       y_lab <- "Number Experiencing Violence"
-      ylim_max <- max(summary_df$n_total, na.rm = TRUE) * 1.15
+      if (is.null(ylim_max)) {
+        ylim_max <- max(summary_df$value, na.rm = TRUE) * 1.15
+        if (!is.finite(ylim_max) || ylim_max <= 0) ylim_max <- 1
+      }
+      truncated_percent <- FALSE
     }
 
     fill_levels <- levels(summary_df[[demographic]])
     fill_values <- demographic_fill_values(demographic, fill_levels)
     x_breaks <- sort(unique(as.integer(summary_df$data_year)))
 
+    apply_percent_scale <- function(p, is_bar = FALSE) {
+      if (!truncated_percent) {
+        return(p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02))))
+      }
+      denom_scale <- scale_max
+      breaks <- percent_axis_breaks(denom_scale)
+      annotate_x <- mean(seq_along(x_breaks))
+      p <- p +
+        {if (is_bar) geom_hline(yintercept = denom_scale, color = "gray80", linewidth = 0.35) else NULL} +
+        annotate(
+          "text",
+          x = annotate_x,
+          y = denom_scale + ylim_max * 0.04,
+          label = "\u2192 100%",
+          size = 3.5,
+          color = "gray35",
+          fontface = "italic"
+        ) +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          breaks = breaks,
+          expand = ggplot2::expansion(mult = c(0, 0))
+        ) +
+        coord_cartesian(clip = "off") +
+        theme(plot.margin = ggplot2::margin(8, 8, 16, 8))
+      p
+    }
+
     if (identical(chart_type, "line")) {
+      summary_df <- summary_df %>%
+        mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
+        arrange(.data$data_year, .data[[demographic]])
       p <- ggplot(summary_df, aes(
         x = .data$data_year,
         y = .data$value,
@@ -526,32 +498,31 @@ server <- function(input, output, session) {
         geom_point(size = 3) +
         geom_text(aes(label = .data$label), vjust = -0.75, size = 4, show.legend = FALSE) +
         scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
-        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = plot_title) +
         plot_calvex_theme(if (show_legend) "bottom" else "none") +
         theme(legend.direction = "horizontal")
-      if (stat_type == "percent") {
-        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      if (truncated_percent) {
+        p <- apply_percent_scale(p, is_bar = FALSE)
       } else {
         p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
       }
     } else {
       p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]])) +
-        geom_col(
-          aes(y = .data$denom_value),
-          position = position_dodge(width = 0.85),
-          alpha = 0.3,
-          width = 0.72,
-          show.legend = FALSE
-        ) +
-        geom_text(
-          aes(y = .data$denom_value, label = paste0(.data$n_total)),
-          vjust = -0.35,
-          position = position_dodge(width = 0.85),
-          size = 4,
-          color = "gray40",
-          show.legend = FALSE
-        ) +
+        # geom_col(
+        #   aes(y = .data$denom_value),
+        #   position = position_dodge(width = 0.85),
+        #   alpha = 0.3,
+        #   width = 0.72,
+        #   show.legend = FALSE
+        # ) +
+        # geom_text(
+        #   aes(y = .data$denom_value, label = paste0(.data$n_total)),
+        #   vjust = -0.35,
+        #   position = position_dodge(width = 0.85),
+        #   size = 4,
+        #   color = "gray40",
+        #   show.legend = FALSE
+        # ) +
         geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
         geom_text(
           aes(y = .data$value, label = .data$label),
@@ -562,8 +533,12 @@ server <- function(input, output, session) {
         ) +
         scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
         labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = plot_title) +
-        plot_calvex_theme() +
-        scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+        plot_calvex_theme()
+      if (truncated_percent) {
+        p <- apply_percent_scale(p, is_bar = TRUE)
+      } else {
+        p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
+      }
     }
 
     if (!show_legend) {
@@ -604,9 +579,9 @@ server <- function(input, output, session) {
 
   # Footnotes below main plot (ggplot renders its own legend)
   output$footnotes_html <- renderUI({
-    vt <- if (!is.null(input$violence)) input$violence else "physical"
-    tp <- if (!is.null(input$time_period)) input$time_period else "lifetime"
-    st <- if (!is.null(input$statistics)) input$statistics else "percent"
+    vt <- input$violence
+    tp <- input$time_period
+    st <- input$statistics
     if (isTRUE(input$show_subcategories) &&
         identical(tp, "past_year") &&
         !identical(vt, "ipv")) {
@@ -625,11 +600,11 @@ server <- function(input, output, session) {
   output$footnotes_html_sub <- renderUI({
     req(
       isTRUE(input$show_subcategories),
-      identical(if (!is.null(input$time_period)) input$time_period else "lifetime", "past_year"),
-      !identical(if (!is.null(input$violence)) input$violence else "physical", "ipv")
+      identical(input$time_period, "past_year"),
+      !identical(input$violence, "ipv")
     )
     vt <- input$violence
-    st <- if (!is.null(input$statistics)) input$statistics else "percent"
+    st <- input$statistics
     lines <- build_footnote_lines(vt, "past_year", st)
     note_html <- lapply(lines, function(ln) tags$p(style = "margin: 0.35rem 0; font-size: 0.9rem; color: #555;", ln))
     tags$div(
@@ -638,7 +613,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Hover tooltip: unweighted cell n and event count
+
   # output: single plot (when not showing subcategories)
   output$histogram <- renderPlot({
     if (isTRUE(input$show_subcategories) &&
@@ -646,13 +621,16 @@ server <- function(input, output, session) {
         input$violence != "ipv") {
       return(invisible(NULL))
     }
-    req(input$YEAR, input$CA_REGION)
+    shiny::validate(
+      need(length(input$YEAR) > 0, "Please select at least one survey year."),
+      need(length(input$CA_REGION) > 0, "Please select at least one California region.")
+    )
     df <- filtered_data()
     demographic <- input$demographic
     stat_type <- input$statistics
     violence_type <- input$violence
-    time_period <- if (!is.null(input$time_period)) input$time_period else "lifetime"
-    chart_type <- if (!is.null(input$chart_type)) input$chart_type else "bar"
+    time_period <- input$time_period
+    chart_type <- input$chart_type
 
     violence_col <- if (violence_type == "physical") {
       if (time_period == "lifetime") "pv_ever" else "pv_12mo"
@@ -731,7 +709,7 @@ server <- function(input, output, session) {
           label = paste0(round(violence_percent, 1), "%"),
           denom_value = scale_max
         )
-      y_lab <- "Percent Experiencing Violence"
+      y_lab <- "Percent Experiencing Violence (%)"
     } else {
       summary_df <- summary_df %>%
         mutate(
@@ -757,6 +735,9 @@ server <- function(input, output, session) {
     leg_pos_main <- if (narrow) "bottom" else "right"
 
     if (identical(chart_type, "line")) {
+      summary_df <- summary_df %>%
+        mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
+        arrange(.data$data_year, .data[[demographic]])
       p <- ggplot(summary_df, aes(
         x = .data$data_year,
         y = .data$value,
@@ -767,7 +748,6 @@ server <- function(input, output, session) {
         geom_point(size = 3.2) +
         geom_text(aes(label = .data$label), vjust = -0.8, size = 4.2, show.legend = FALSE) +
         scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
-        scale_x_continuous(breaks = x_breaks, labels = as.character(x_breaks)) +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = main_title) +
         plot_calvex_theme(leg_pos_main) +
         theme(legend.direction = if (narrow) "horizontal" else "vertical")
@@ -776,7 +756,7 @@ server <- function(input, output, session) {
         p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35) +
           annotate(
             "text",
-            x = mean(x_breaks),
+            x = mean(seq_along(x_breaks)),
             y = 62.5,
             label = "\u2192 100%",
             size = 3.8,
@@ -893,7 +873,10 @@ server <- function(input, output, session) {
     req(isTRUE(input$show_subcategories),
         identical(input$time_period, "past_year"),
         input$violence != "ipv")
-    req(input$YEAR, input$CA_REGION)
+    shiny::validate(
+      need(length(input$YEAR) > 0, "Please select at least one survey year."),
+      need(length(input$CA_REGION) > 0, "Please select at least one California region.")
+    )
     df <- filtered_data()
     violence_type <- input$violence
     config <- subcategory_config[[violence_type]]
@@ -903,10 +886,33 @@ server <- function(input, output, session) {
     stat_type <- input$statistics
     show_overall <- is.null(input$overall) || isTRUE(input$overall)
 
-    chart_type <- if (!is.null(input$chart_type)) input$chart_type else "bar"
+    chart_type <- input$chart_type
+
+    summaries <- lapply(config, function(item) {
+      prepare_subcategory_summary(
+        df, item$col, demographic, stat_type, show_overall, demographic_labels
+      )
+    })
+    valid_summaries <- summaries[!vapply(summaries, is.null, logical(1L))]
+    req(length(valid_summaries) > 0)
+
+    # UNIFORM: one y-axis for all panels from the highest bar in any subcategory chart.
+    global_max <- max(
+      vapply(valid_summaries, function(s) max(s$value, na.rm = TRUE), numeric(1)),
+      na.rm = TRUE
+    )
+    limits <- compute_shared_subcategory_limits(global_max, stat_type)
 
     plot_list <- list()
+    plot_idx <- 0L
     for (i in seq_along(config)) {
+      s <- summaries[[i]]
+      if (is.null(s)) next
+      plot_idx <- plot_idx + 1L
+      # PER-PANEL: scale each chart to its own tallest bar
+      # panel_max <- max(s$value, na.rm = TRUE)
+      # limits <- compute_panel_subcategory_limits(panel_max, stat_type)
+      # UNIFORM: use shared limits instead — ylim_max = limits$ylim_max, scale_max = limits$scale_max
       p <- make_one_plot(
         df,
         violence_col = config[[i]]$col,
@@ -916,8 +922,11 @@ server <- function(input, output, session) {
         show_overall = show_overall,
         demographic_labels = demographic_labels,
         graph_labels = graph_labels,
-        show_legend = identical(i, 1L),
-        chart_type = chart_type
+        show_legend = identical(plot_idx, 1L),
+        chart_type = chart_type,
+        ylim_max = limits$ylim_max,
+        scale_max = limits$scale_max,
+        summary_df = s
       )
       if (!is.null(p)) plot_list[[length(plot_list) + 1L]] <- p
     }
@@ -947,4 +956,3 @@ server <- function(input, output, session) {
   })
 
 }
-

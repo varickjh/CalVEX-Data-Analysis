@@ -45,24 +45,27 @@ ui <- page_sidebar(
           max-height: min(420px, calc(100vh - 140px));
         }
       }
+      label.control-label { font-weight: 600; }
+      .accordion-button { font-weight: 600; }
     "))
   ),
 
   # page title
-  title = "CalVEX Analysis",
+  title = "California Violence Experiences (CalVEX) Online Data Visualization Tool",
 
-  # sidebar Layout 
+  # sidebar Layout
   sidebar = sidebar(
     open = list(desktop = "open", mobile = "closed"),
     collapsible = TRUE,
-    
+
     # graph time selection: Lifetime or Past Year
     selectInput("time_period", "Time Period:",
-      choices = list("Lifetime" = "lifetime",
-                  "Past Year" = "past_year"),
+      # choices = list("Lifetime" = "lifetime",
+      #             "Past Year" = "past_year"),
+      choices = list("Past Year" = "past_year"),
       selected = "past_year"
     ),
-    
+
     # graph select violence type
     selectInput("violence", "Violence Type:",
       choices = list("Physical Violence" = "physical",
@@ -80,7 +83,7 @@ ui <- page_sidebar(
         "Race/Ethnicity" = "RACE_5",
         "Sexuality" = "LGB_3",
         "Income Quintile" = "INCOME_QUINTILE",
-        "Education Level" = "EDUC_4",
+        "Education Level" = "EDUC5",
         "Employment Status" = "EMPLOY_2",
         "Disability Status" = "DISABILITY"),
       selected = "GENDER"
@@ -118,6 +121,7 @@ ui <- page_sidebar(
     ),
 
     accordion(
+      open = FALSE,
       # accordion panel: Demographic Information
       accordion_panel(
         "Demographic Specifics",
@@ -128,10 +132,9 @@ ui <- page_sidebar(
           choices = list(
             "Female" = 1,
             "Male" = 2,
-            "Gender non-conforming" = 3,
-            "Prefer not to say" = 98
+            "Gender non-conforming" = 3
           ),
-          selected = list(1, 2, 3, 98)
+          selected = list(1, 2, 3)
         ),
 
         # checkbox selection for self-described sexuality; LGB_3
@@ -140,10 +143,9 @@ ui <- page_sidebar(
           choices = list(
             "Lesbian / Gay" = 1,
             "Straight" = 2,
-            "Bisexual / other identity" = 3,
-            "Prefer not to say" = 98
+            "Bisexual / other identity" = 3
           ),
-          selected = list(1, 2, 3, 98)
+          selected = list(1, 2, 3)
         ),
 
         # checkbox selection for age; AGE_6
@@ -164,11 +166,11 @@ ui <- page_sidebar(
         checkboxGroupInput(
           "RACE_5", "Race / Ethnicity:",
           choices = list(
-            "White, NH" = 1,
-            "Black, NH" = 2,
-            "Asian, NH" = 3,
+            "White, Non-Hispanic" = 1,
+            "Black, Non-Hispanic" = 2,
+            "Asian, Non-Hispanic" = 3,
             "Hispanic" = 4,
-            "Other/multiple races, NH" = 5
+            "Other/multiple races, Non-Hispanic" = 5
           ),
           selected = list(1, 2, 3, 4, 5)
         ),
@@ -186,18 +188,20 @@ ui <- page_sidebar(
           selected = list(1, 2, 3, 4, 5)
         ),
 
-        # checkbox selection for education level; EDUC_4
+        # checkbox selection for education level; EDUC5
         checkboxGroupInput(
-          "EDUC_4", "Education Level:",
+          "EDUC5", "Education Level:",
           choices = list(
             "Less than High School" = 1,
             "High School Graduate / Some College" = 2,
             "Bachelor's Degree" = 3,
-            "Master's Degree" = 4
+            "Master's Degree" = 4,
+            "Post-Graduate/Professional Degree" = 5
           ), 
-          selected = list(1, 2, 3, 4)
+          selected = list(1, 2, 3, 4, 5)
         ),
-        #checkbox selection for employment status; EMPLOY_2
+
+        # checkbox selection for employment status; EMPLOY_2
         checkboxGroupInput(
           "EMPLOY_2", "Employment Status:",
           choices = list(
@@ -206,13 +210,14 @@ ui <- page_sidebar(
           ),
           selected = list(1, 2)
         ),
-        #checkbox selection for disability status; DISABILITY
+
+        # checkbox selection for disability status; DISABILITY
         checkboxGroupInput(
           "DISABILITY", "Disability Status:",
           choices = list(
             "No Disability" = 0,
             "Has Disability" = 1
-          ), 
+          ),
           selected = list(0, 1)
         ),
       ),
@@ -221,7 +226,11 @@ ui <- page_sidebar(
       accordion_panel(
         "Time & Location",
 
-        uiOutput("year_ui"),
+        checkboxGroupInput(
+          "YEAR", "Survey Year:",
+          choices  = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
+          selected = c(2025, 2023, 2022, 2021, 2020)
+        ),
 
         checkboxGroupInput(
           "CA_REGION",
@@ -242,7 +251,7 @@ ui <- page_sidebar(
       ),
 
       accordion_panel(
-        "Notes & Citations",
+        "Notes",
         tags$ul(
           style = "font-size: 0.92rem; padding-left: 1.1rem;",
           tags$li("All data are weighted."),
@@ -252,12 +261,27 @@ ui <- page_sidebar(
           tags$li(
             "We cannot assume that differences are statistically significant; see reports for significance levels."
           ),
-          tags$li("Raw data can be accessed in full datasets on OpenICPSR.")
+          tags$li("Raw data can be accessed in full datasets on OpenICPSR."),
+          tags$li("Charts can be saved by pressing Ctrl+S or can be opened in a new tab."),
+          tags$li("On default, the app will show data for all years and regions."),
+        )
+      ),
+      tags$footer(
+        style = paste(
+          "padding: clamp(6px, 1.5vw, 10px) clamp(10px, 3vw, 16px); font-size: 0.75rem; color: #444;"
+        ),
+        HTML(
+          paste0(
+            "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+            "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+            "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+            "www.vexdata.org/data/caldashboard</a>."
+          )
         )
       )
     ),
   ),
-  
+
 
   # main Panel: single plot or side-by-side subcategory plots
   conditionalPanel(
@@ -282,19 +306,18 @@ ui <- page_sidebar(
     )
   ),
 
-  tags$footer(
-    style = paste(
-      "padding: 10px 16px; font-size: 0.88rem; color: #444;",
-      "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
-    ),
-    HTML(
-      paste0(
-        "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
-        "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
-        "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
-        "www.vexdata.org/data/caldashboard</a>."
-      )
-    )
-  )
+  # tags$footer(
+  #   style = paste(
+  #     "padding: 10px 16px; font-size: 0.88rem; color: #444;",
+  #     "border-top: 1px solid #e0e0e0; margin-top: auto; line-height: 1.45;"
+  #   ),
+  #   HTML(
+  #     paste0(
+  #       "Thomas J, Johns NE, Kully G, Raj A. California Violence Experiences (CalVEX) Online Data Visualization Tool. ",
+  #       "2026. University of California San Diego &amp; Newcomb Institute, Tulane University. ",
+  #       "<a href=\"https://www.vexdata.org/data/caldashboard\" target=\"_blank\" rel=\"noopener noreferrer\">",
+  #       "www.vexdata.org/data/caldashboard</a>."
+  #     )
+  #   )
+  # )
 )
-
