@@ -4,8 +4,11 @@ library(ggplot2)
 library(grid)
 library(httr)
 library(jsonlite)
+library(ggiraph)
 
 server <- function(input, output, session) {
+
+  addResourcePath("images", file.path(getwd(), "images"))
 
   # ---------------------------------------------------------------------------
   # Data loading via Supabase Data API (PostgREST)
@@ -125,7 +128,7 @@ server <- function(input, output, session) {
   # fixed purple palette (stable order; mapped to canonical demographic order)
   purple_fill_palette <- c("#CEA9EA", "#B08FD4", "#8E6FB0", "#6b558e", "#4A3D66", "#3d2d52")
 
-  # ordered non-Overall levels: definition order in demographic_labels, intersected with present values
+  # Non-Overall levels in UI / demographic_labels order (sidebar checkbox order).
   ordered_demographic_levels <- function(demographic, present_chars) {
     labs <- demographic_labels[[demographic]]
     others <- present_chars[present_chars != "Overall"]
@@ -133,6 +136,25 @@ server <- function(input, output, session) {
       return(sort(unique(others)))
     }
     intersect(unname(labs), unique(others))
+  }
+
+  # Full bar/legend order: Overall (leftmost bar) then sidebar demographic order.
+  build_demographic_factor_levels <- function(demographic, present_chars, show_overall = TRUE) {
+    present_chars <- as.character(present_chars)
+    present_chars <- present_chars[!is.na(present_chars)]
+    olv <- ordered_demographic_levels(demographic, present_chars)
+    has_overall <- any(present_chars == "Overall", na.rm = TRUE)
+    lv <- if (has_overall && show_overall) c("Overall", olv) else olv
+    lv[vapply(lv, function(L) any(present_chars == L, na.rm = TRUE), logical(1L))]
+  }
+
+  apply_demographic_factor <- function(summary_df, demographic, levels_vec) {
+    if (nrow(summary_df) == 0L || length(levels_vec) == 0L) {
+      return(summary_df)
+    }
+    dch <- as.character(summary_df[[demographic]])
+    summary_df[[demographic]] <- factor(dch, levels = levels_vec)
+    summary_df
   }
 
   # named fill colors for Overall + categories (same label -> same color across violence types)
@@ -149,15 +171,75 @@ server <- function(input, output, session) {
     out[idx]
   }
 
+  # Map Overall + up to 6 demographic slots to a fixed pool (line charts).
+  demographic_slot_values <- function(levels_present, pool) {
+    lv <- levels_present[!is.na(levels_present)]
+    out <- stats::setNames(vector(typeof(pool[[1L]]), length(lv)), lv)
+    cat_idx <- 0L
+    for (label in lv) {
+      if (identical(label, "Overall")) {
+        out[[label]] <- pool[[1L]]
+      } else {
+        cat_idx <- cat_idx + 1L
+        idx <- min(cat_idx + 1L, length(pool))
+        out[[label]] <- pool[[idx]]
+      }
+    }
+    out
+  }
+
+  # Colour + linetype + shape for line charts (triple-encoded legend).
+  demographic_line_aesthetics <- function(demographic, levels_present, fill_values = NULL) {
+    if (is.null(fill_values)) {
+      fill_values <- demographic_fill_values(demographic, levels_present)
+    }
+    list(
+      color = fill_values,
+      linetype = demographic_slot_values(
+        levels_present,
+        c("solid", "solid", "dashed", "dotdash", "longdash", "twodash", "dotted")
+      ),
+      shape = demographic_slot_values(
+        levels_present,
+        c(19, 16, 17, 15, 18, 8, 4)
+      )
+    )
+  }
+
+  add_line_demographic_scales <- function(p, demo_levels, demographic, graph_labels, fill_values = NULL) {
+    aes_vals <- demographic_line_aesthetics(demographic, demo_levels, fill_values)
+    leg_name <- graph_labels[demographic]
+    p +
+      scale_color_manual(
+        values = aes_vals$color,
+        breaks = demo_levels,
+        limits = demo_levels,
+        name = leg_name
+      ) +
+      scale_linetype_manual(
+        values = aes_vals$linetype,
+        breaks = demo_levels,
+        limits = demo_levels,
+        name = leg_name
+      ) +
+      scale_shape_manual(
+        values = aes_vals$shape,
+        breaks = demo_levels,
+        limits = demo_levels,
+        name = leg_name
+      )
+  }
+
   # ggplot theme: larger axis text, legends, titles
   plot_calvex_theme <- function(legend_pos = "right") {
     theme_minimal(base_size = 14) +
       theme(
         axis.title = element_text(size = 14, face = "bold"),
         axis.text = element_text(size = 12),
-        legend.title = element_text(size = 13, face = "bold"),
-        legend.text = element_text(size = 12),
-        plot.title = element_text(size = 20, face = "bold"),
+        legend.title = element_text(size = 11, face = "bold"),
+        legend.text = element_text(size = 10),
+        legend.key.size = unit(1, "lines"),
+        plot.title = element_text(size = 18, face = "bold"),
         plot.caption = element_text(size = 10, color = "gray40"),
         legend.position = legend_pos
       )
@@ -184,6 +266,27 @@ server <- function(input, output, session) {
       )
     }
   })
+
+  # Click logo / title to restore default sidebar and chart settings
+  observeEvent(input$reset_to_defaults, {
+    updateSelectInput(session, "time_period", selected = "past_year")
+    updateSelectInput(session, "violence", selected = "physical")
+    updateSelectInput(session, "demographic", selected = "GENDER")
+    updateSelectInput(session, "chart_type", selected = "bar")
+    updateSelectInput(session, "statistics", selected = "percent")
+    updateCheckboxInput(session, "overall", value = TRUE)
+    updateCheckboxInput(session, "show_subcategories", value = FALSE)
+    updateCheckboxGroupInput(session, "GENDER", selected = c(1, 2, 3))
+    updateCheckboxGroupInput(session, "LGB_3", selected = c(1, 2, 3))
+    updateCheckboxGroupInput(session, "AGE_6", selected = 1:6)
+    updateCheckboxGroupInput(session, "RACE_5", selected = 1:5)
+    updateCheckboxGroupInput(session, "INCOME_QUINTILE", selected = 1:5)
+    updateCheckboxGroupInput(session, "EDUC5", selected = 1:5)
+    updateCheckboxGroupInput(session, "EMPLOY_2", selected = c(1, 2))
+    updateCheckboxGroupInput(session, "DISABILITY", selected = c(0, 1))
+    updateCheckboxGroupInput(session, "YEAR", selected = c(2025, 2023, 2022, 2021, 2020))
+    updateCheckboxGroupInput(session, "CA_REGION", selected = 1:5)
+  }, ignoreInit = TRUE)
 
   filtered_data <- reactive({
     df <- calvex_data
@@ -327,11 +430,6 @@ server <- function(input, output, session) {
       overall_df$violence_percent <- (overall_df$violence_count_weighted /
         overall_df$total_surveyed_in_demographic) * 100
       summary_df <- dplyr::bind_rows(summary_df, overall_df)
-      if (any(summary_df[[demographic]] == "Overall", na.rm = TRUE)) {
-        demo_vals <- as.character(summary_df[[demographic]])
-        other_levels <- ordered_demographic_levels(demographic, demo_vals)
-        summary_df[[demographic]] <- factor(demo_vals, levels = c("Overall", other_levels))
-      }
     }
 
     selected_codes <- input[[demographic]]
@@ -349,13 +447,10 @@ server <- function(input, output, session) {
       }
     }
 
-    if (nrow(summary_df) > 0) {
-      dch <- as.character(summary_df[[demographic]])
-      olv <- ordered_demographic_levels(demographic, dch)
-      final_levels <- if (any(dch == "Overall", na.rm = TRUE)) c("Overall", olv) else olv
-      final_levels <- final_levels[vapply(final_levels, function(L) any(dch == L, na.rm = TRUE), logical(1L))]
-      summary_df[[demographic]] <- factor(dch, levels = final_levels)
-    }
+    demo_levels <- build_demographic_factor_levels(
+      demographic, summary_df[[demographic]], show_overall
+    )
+    summary_df <- apply_demographic_factor(summary_df, demographic, demo_levels)
 
     if (stat_type == "percent") {
       summary_df <- summary_df %>%
@@ -421,9 +516,48 @@ server <- function(input, output, session) {
     seq(0, scale_max, by = step)
   }
 
+  # Main (non-subcategory) percent chart: past-year axis cap; 60 for sexual + gender/age.
+  main_histogram_percent_limits <- function(time_period, violence_type, demographic) {
+    if (!identical(time_period, "past_year")) {
+      return(list(
+        scale_max = 100,
+        ylim_max = 107,
+        breaks = c(0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+      ))
+    }
+    if (identical(violence_type, "sexual") && demographic %in% c("GENDER", "AGE_6")) {
+      scale_max <- 60
+    } else {
+      scale_max <- 40
+    }
+    list(
+      scale_max = scale_max,
+      ylim_max = scale_max + 5,
+      breaks = percent_axis_breaks(scale_max)
+    )
+  }
+
+  girafe_default_options <- function() {
+    list(
+      ggiraph::opts_sizing(rescale = TRUE, width = 1),
+      ggiraph::opts_tooltip(
+        css = paste0(
+          "background:transparent;border:none;padding:0;",
+          "box-shadow:none;font-family:sans-serif;"
+        ),
+        use_fill = FALSE,
+        use_stroke = FALSE,
+        delay_mouseout = 200
+      ),
+      ggiraph::opts_hover(css = "opacity:0.85;cursor:crosshair;"),
+      ggiraph::opts_toolbar(saveaspng = FALSE)
+    )
+  }
+
   # Build one chart (bar or line) for a given violence column (subcategory panel)
   make_one_plot <- function(df, violence_col, plot_title, demographic, stat_type,
                             show_overall, demographic_labels, graph_labels,
+                            violence_type,
                             show_legend = TRUE, chart_type = "bar",
                             ylim_max = NULL, scale_max = NULL,
                             summary_df = NULL) {
@@ -452,9 +586,53 @@ server <- function(input, output, session) {
       truncated_percent <- FALSE
     }
 
-    fill_levels <- levels(summary_df[[demographic]])
-    fill_values <- demographic_fill_values(demographic, fill_levels)
+    demo_levels <- build_demographic_factor_levels(
+      demographic, summary_df[[demographic]], show_overall
+    )
+    summary_df <- apply_demographic_factor(summary_df, demographic, demo_levels)
+    fill_values <- demographic_fill_values(demographic, demo_levels)
     x_breaks <- sort(unique(as.integer(summary_df$data_year)))
+
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
+    label_size_val <- if (dense_demo) 2 else 3
+
+    summary_df <- summary_df %>%
+      mutate(
+        .tooltip = mapply(
+          make_tooltip_html,
+          demo_label = as.character(.data[[demographic]]),
+          year = .data$data_year,
+          pct = .data$violence_percent,
+          raw_count = .data$violence_count,
+          MoreArgs = list(violence_type = violence_type, v_label = plot_title),
+          SIMPLIFY = TRUE
+        ),
+        .data_id = paste0(
+          violence_col, "_",
+          as.character(.data[[demographic]]), "_",
+          .data$data_year
+        )
+      )
+    summary_df <- apply_demographic_factor(summary_df, demographic, demo_levels)
+    summary_df$.demo_fill <- factor(
+      as.character(summary_df[[demographic]]),
+      levels = demo_levels
+    )
+    summary_df <- summary_df[order(summary_df$data_year, summary_df$.demo_fill), ]
+
+    subcat_legend_theme <- function() {
+      if (!show_legend) {
+        return(theme(legend.position = "none"))
+      }
+      theme(
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.box = "horizontal",
+        legend.box.just = "left",
+        legend.margin = ggplot2::margin(t = 8, b = 0),
+        plot.margin = ggplot2::margin(8, 8, 20, 8)
+      )
+    }
 
     apply_percent_scale <- function(p, is_bar = FALSE) {
       if (!truncated_percent) {
@@ -465,15 +643,15 @@ server <- function(input, output, session) {
       annotate_x <- mean(seq_along(x_breaks))
       p <- p +
         {if (is_bar) geom_hline(yintercept = denom_scale, color = "gray80", linewidth = 0.35) else NULL} +
-        annotate(
-          "text",
-          x = annotate_x,
-          y = denom_scale + ylim_max * 0.04,
-          label = "\u2192 100%",
-          size = 3.5,
-          color = "gray35",
-          fontface = "italic"
-        ) +
+        # annotate(
+        #   "text",
+        #   x = annotate_x,
+        #   y = denom_scale + ylim_max * 0.04,
+        #   label = "\u2192 100%",
+        #   size = 3.5,
+        #   color = "gray35",
+        #   fontface = "italic"
+        # ) +
         scale_y_continuous(
           limits = c(0, ylim_max),
           breaks = breaks,
@@ -487,53 +665,81 @@ server <- function(input, output, session) {
     if (identical(chart_type, "line")) {
       summary_df <- summary_df %>%
         mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
-        arrange(.data$data_year, .data[[demographic]])
+        arrange(.data$data_year, .data$.demo_fill)
       p <- ggplot(summary_df, aes(
         x = .data$data_year,
         y = .data$value,
-        color = .data[[demographic]],
-        group = .data[[demographic]]
+        color = .data$.demo_fill,
+        linetype = .data$.demo_fill,
+        shape = .data$.demo_fill,
+        group = .data$.demo_fill
       )) +
         geom_line(linewidth = 1.1) +
-        geom_point(size = 3) +
-        geom_text(aes(label = .data$label), vjust = -0.75, size = 4, show.legend = FALSE) +
-        scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
+        ggiraph::geom_point_interactive(
+          aes(tooltip = .data$.tooltip, data_id = .data$.data_id),
+          size = 3
+        ) +
+        geom_text(aes(label = .data$label), vjust = -0.75, size = label_size_val, show.legend = FALSE)
+      p <- add_line_demographic_scales(p, demo_levels, demographic, graph_labels, fill_values)
+      p <- p +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = plot_title) +
         plot_calvex_theme(if (show_legend) "bottom" else "none") +
-        theme(legend.direction = "horizontal")
+        subcat_legend_theme()
+      if (identical(demographic, "EDUC5") && show_legend) {
+        p <- p + theme(
+          legend.title = element_text(size = 10),
+          legend.text = element_text(size = 9),
+          legend.key.size = unit(0.75, "lines")
+        )
+      }
       if (truncated_percent) {
         p <- apply_percent_scale(p, is_bar = FALSE)
       } else {
         p <- p + scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
       }
     } else {
-      p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]])) +
-        # geom_col(
-        #   aes(y = .data$denom_value),
-        #   position = position_dodge(width = 0.85),
-        #   alpha = 0.3,
-        #   width = 0.72,
-        #   show.legend = FALSE
-        # ) +
-        # geom_text(
-        #   aes(y = .data$denom_value, label = paste0(.data$n_total)),
-        #   vjust = -0.35,
-        #   position = position_dodge(width = 0.85),
-        #   size = 4,
-        #   color = "gray40",
-        #   show.legend = FALSE
-        # ) +
-        geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
+      p <- ggplot(summary_df, aes(
+        x = factor(.data$data_year),
+        fill = .data$.demo_fill,
+        group = .data$.demo_fill
+      )) +
+        ggiraph::geom_col_interactive(
+          aes(
+            y = .data$value,
+            tooltip = .data$.tooltip,
+            data_id = .data$.data_id,
+            group = .data$.demo_fill
+          ),
+          position = position_dodge(width = 0.85),
+          width = 0.72
+        ) +
         geom_text(
-          aes(y = .data$value, label = .data$label),
+          aes(
+            y = .data$value,
+            label = .data$label,
+            group = .data$.demo_fill
+          ),
           vjust = -0.35,
           position = position_dodge(width = 0.85),
-          size = 4,
+          size = label_size_val,
           show.legend = FALSE
         ) +
-        scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
+        scale_fill_manual(
+          values = fill_values,
+          breaks = demo_levels,
+          limits = demo_levels,
+          name = graph_labels[demographic]
+        ) +
         labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = plot_title) +
-        plot_calvex_theme()
+        plot_calvex_theme(if (show_legend) "bottom" else "none") +
+        subcat_legend_theme()
+      if (identical(demographic, "EDUC5") && show_legend) {
+        p <- p + theme(
+          legend.title = element_text(size = 10),
+          legend.text = element_text(size = 9),
+          legend.key.size = unit(0.75, "lines")
+        )
+      }
       if (truncated_percent) {
         p <- apply_percent_scale(p, is_bar = TRUE)
       } else {
@@ -541,9 +747,171 @@ server <- function(input, output, session) {
       }
     }
 
-    if (!show_legend) {
-      p <- p + theme(legend.position = "none")
+    p
+  }
+
+  # Single faceted ggiraph plot: vertical stack, one legend below the last panel.
+  build_subcategory_combined_plot <- function(
+    config, summaries, demographic, stat_type, violence_type,
+    show_overall, graph_labels, limits, chart_type
+  ) {
+    chunks <- list()
+    panel_levels <- character()
+    for (i in seq_along(config)) {
+      s <- summaries[[i]]
+      if (is.null(s)) next
+      s$panel_title <- config[[i]]$title
+      s$subcat_col <- config[[i]]$col
+      panel_levels <- c(panel_levels, config[[i]]$title)
+      chunks[[length(chunks) + 1L]] <- s
     }
+    if (length(chunks) == 0L) return(NULL)
+
+    combined <- dplyr::bind_rows(chunks)
+    combined$panel_title <- factor(combined$panel_title, levels = panel_levels)
+
+    demo_levels <- build_demographic_factor_levels(
+      demographic, combined[[demographic]], show_overall
+    )
+    combined <- apply_demographic_factor(combined, demographic, demo_levels)
+    fill_values <- demographic_fill_values(demographic, demo_levels)
+
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
+    label_size_val <- if (dense_demo) 2 else 3
+
+    if (stat_type == "percent") {
+      scale_max <- limits$scale_max
+      ylim_max <- limits$ylim_max
+      y_lab <- "Percent Experiencing Violence (%)"
+      truncated_percent <- !is.null(scale_max) && scale_max < 100
+      combined <- combined %>% mutate(denom_value = scale_max)
+    } else {
+      ylim_max <- limits$ylim_max
+      y_lab <- "Number Experiencing Violence"
+      truncated_percent <- FALSE
+      combined <- combined %>% mutate(denom_value = n_total)
+    }
+
+    combined <- combined %>%
+      mutate(
+        .tooltip = mapply(
+          make_tooltip_html,
+          demo_label = as.character(.data[[demographic]]),
+          year = .data$data_year,
+          pct = .data$violence_percent,
+          raw_count = .data$violence_count,
+          v_label = as.character(.data$panel_title),
+          MoreArgs = list(violence_type = violence_type),
+          SIMPLIFY = TRUE
+        ),
+        .data_id = paste0(
+          .data$subcat_col, "_",
+          as.character(.data[[demographic]]), "_",
+          .data$data_year
+        )
+      )
+    combined <- apply_demographic_factor(combined, demographic, demo_levels)
+    combined$.demo_fill <- factor(
+      as.character(combined[[demographic]]),
+      levels = demo_levels
+    )
+    combined <- combined[order(combined$panel_title, combined$data_year, combined$.demo_fill), ]
+
+    subcat_combined_theme <- function() {
+      theme(
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        legend.box = "horizontal",
+        legend.box.just = "center",
+        legend.margin = ggplot2::margin(t = 10, b = 4),
+        strip.text = element_text(face = "bold", size = 11, hjust = 0),
+        strip.placement = "outside",
+        panel.spacing.y = grid::unit(1.1, "lines"),
+        plot.margin = ggplot2::margin(10, 12, 14, 10)
+      )
+    }
+
+    if (identical(chart_type, "line")) {
+      x_breaks <- sort(unique(as.integer(combined$data_year)))
+      combined <- combined %>%
+        mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks)))
+      p <- ggplot(combined, aes(
+        x = .data$data_year,
+        y = .data$value,
+        color = .data$.demo_fill,
+        linetype = .data$.demo_fill,
+        shape = .data$.demo_fill,
+        group = .data$.demo_fill
+      )) +
+        geom_line(linewidth = 1.1) +
+        ggiraph::geom_point_interactive(
+          aes(tooltip = .data$.tooltip, data_id = .data$.data_id),
+          size = 2.8
+        ) +
+        geom_text(aes(label = .data$label), vjust = -0.75, size = label_size_val, show.legend = FALSE) +
+        facet_wrap(~panel_title, ncol = 1, scales = "fixed", strip.position = "top")
+      p <- add_line_demographic_scales(p, demo_levels, demographic, graph_labels, fill_values)
+      p <- p +
+        labs(x = "Year", y = y_lab, color = graph_labels[demographic]) +
+        plot_calvex_theme("bottom") +
+        subcat_combined_theme()
+    } else {
+      p <- ggplot(combined, aes(
+        x = factor(.data$data_year),
+        y = .data$value,
+        fill = .data$.demo_fill,
+        group = .data$.demo_fill
+      )) +
+        ggiraph::geom_col_interactive(
+          aes(tooltip = .data$.tooltip, data_id = .data$.data_id),
+          position = position_dodge(width = 0.85),
+          width = 0.72
+        ) +
+        geom_text(
+          aes(label = .data$label, group = .data$.demo_fill),
+          vjust = -0.35,
+          position = position_dodge(width = 0.85),
+          size = label_size_val,
+          show.legend = FALSE
+        ) +
+        facet_wrap(~panel_title, ncol = 1, scales = "fixed", strip.position = "top") +
+        scale_fill_manual(
+          values = fill_values,
+          breaks = demo_levels,
+          limits = demo_levels,
+          name = graph_labels[demographic]
+        ) +
+        labs(x = "Year", y = y_lab, fill = graph_labels[demographic]) +
+        plot_calvex_theme("bottom") +
+        subcat_combined_theme()
+    }
+
+    if (identical(demographic, "EDUC5")) {
+      p <- p + theme(
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 9),
+        legend.key.size = unit(0.75, "lines")
+      )
+    }
+
+    if (truncated_percent) {
+      breaks <- percent_axis_breaks(scale_max)
+      p <- p +
+        geom_hline(yintercept = scale_max, color = "gray80", linewidth = 0.35) +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          breaks = breaks,
+          expand = ggplot2::expansion(mult = c(0, 0))
+        ) +
+        coord_cartesian(clip = "off")
+    } else {
+      p <- p +
+        scale_y_continuous(
+          limits = c(0, ylim_max),
+          expand = ggplot2::expansion(mult = c(0, 0.02))
+        )
+    }
+
     p
   }
 
@@ -614,12 +982,30 @@ server <- function(input, output, session) {
   })
 
 
-  # output: single plot (when not showing subcategories)
-  output$histogram <- renderPlot({
+  # ---------------------------------------------------------------------------
+  # Helper: build ggiraph tooltip HTML for one summary_df row
+  # ---------------------------------------------------------------------------
+  make_tooltip_html <- function(demo_label, year, pct, raw_count, violence_type, v_label) {
+    verb <- if (violence_type %in% c("sexual_perp", "physical_perp")) "perpetrating" else "experiencing"
+    interp <- paste0(demo_label, " ", verb, " ", v_label, " in ", year)
+    paste0(
+      "<div style='font-family:sans-serif;font-size:13px;line-height:1.6;",
+      "background:#fff;border:1px solid #ccc;border-radius:6px;",
+      "padding:8px 12px;box-shadow:2px 2px 6px rgba(0,0,0,.15);min-width:180px;'>",
+      "<b>", interp, "</b><br/>",
+      "<span style='color:#555;'>Year:</span> <b>", year, "</b><br/>",
+      "<span style='color:#555;'>Percentage:</span> <b>", round(pct, 1), "%</b><br/>",
+      "<span style='color:#555;'>Raw count:</span> <b>", raw_count, "</b>",
+      "</div>"
+    )
+  }
+
+  # output: single plot (when not showing subcategories) — rendered via ggiraph
+  output$histogram <- ggiraph::renderGirafe({
     if (isTRUE(input$show_subcategories) &&
         identical(input$time_period, "past_year") &&
         input$violence != "ipv") {
-      return(invisible(NULL))
+      return(ggiraph::girafe(ggobj = ggplot() + theme_void()))
     }
     shiny::validate(
       need(length(input$YEAR) > 0, "Please select at least one survey year."),
@@ -670,11 +1056,6 @@ server <- function(input, output, session) {
       overall_df$violence_percent <- (overall_df$violence_count_weighted /
         overall_df$total_surveyed_in_demographic) * 100
       summary_df <- dplyr::bind_rows(summary_df, overall_df)
-      if (any(summary_df[[demographic]] == "Overall", na.rm = TRUE)) {
-        demo_vals <- as.character(summary_df[[demographic]])
-        other_levels <- ordered_demographic_levels(demographic, demo_vals)
-        summary_df[[demographic]] <- factor(demo_vals, levels = c("Overall", other_levels))
-      }
     }
 
     selected_codes <- input[[demographic]]
@@ -692,17 +1073,16 @@ server <- function(input, output, session) {
       }
     }
 
-    if (nrow(summary_df) > 0) {
-      dch <- as.character(summary_df[[demographic]])
-      olv <- ordered_demographic_levels(demographic, dch)
-      final_levels <- if (any(dch == "Overall", na.rm = TRUE)) c("Overall", olv) else olv
-      final_levels <- final_levels[vapply(final_levels, function(L) any(dch == L, na.rm = TRUE), logical(1L))]
-      summary_df[[demographic]] <- factor(dch, levels = final_levels)
-    }
+    demo_levels <- build_demographic_factor_levels(
+      demographic, summary_df[[demographic]], show_overall
+    )
+    summary_df <- apply_demographic_factor(summary_df, demographic, demo_levels)
 
     if (stat_type == "percent") {
-      scale_max  <- if (time_period == "past_year") 60 else 100
-      ylim_max   <- if (time_period == "past_year") 70 else 107
+      pct_limits <- main_histogram_percent_limits(time_period, violence_type, demographic)
+      scale_max <- pct_limits$scale_max
+      ylim_max <- pct_limits$ylim_max
+      percent_breaks <- pct_limits$breaks
       summary_df <- summary_df %>%
         mutate(
           value = violence_percent,
@@ -725,47 +1105,83 @@ server <- function(input, output, session) {
     x_breaks <- sort(unique(summary_df$data_year))
 
     v_title <- if (violence_type == "physical") "Physical Violence" else if (violence_type == "sexual") "Sexual Violence" else if (violence_type == "ipv") "Intimate Partner Violence" else if (violence_type == "sexual_perp") "Sexual Violence Perpetration" else "Physical Violence Perpetration"
-    main_title <- paste(v_title, "Experience by", graph_labels[demographic], "–", paste(sort(unique(df$data_year)), collapse = ", "))
+    main_title <- paste(v_title, "Experience by", graph_labels[demographic], "\u2013", paste(sort(unique(df$data_year)), collapse = ", "))
 
-    fill_levels <- levels(summary_df[[demographic]])
-    fill_values <- demographic_fill_values(demographic, fill_levels)
+    fill_values <- demographic_fill_values(demographic, demo_levels)
 
     pw <- session$clientData[["output_histogram_width"]]
+    ph <- session$clientData[["output_histogram_height"]]
     narrow <- !is.null(pw) && !is.na(pw) && pw < 700
+
+    # Convert container pixel dimensions to SVG inches (96 px/in).
+    # SVG is rendered at this size then scaled by the browser to fill the
+    # container, so text / element proportions stay consistent at any viewport.
+    svg_w <- if (!is.null(pw) && !is.na(pw) && pw > 0) pw / 96 else 8
+    svg_h <- if (!is.null(ph) && !is.na(ph) && ph > 0) ph / 96 else 5
+    # Clamp to sensible limits
+    svg_w <- max(4, min(svg_w, 20))
+    svg_h <- max(3, min(svg_h, 14))
+
     leg_pos_main <- if (narrow) "bottom" else "right"
+
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
+    label_size_n   <- if (dense_demo) 2.5 else 3
+    label_size_val <- if (dense_demo) 2   else 3
+
+    # Build per-row tooltip HTML and a unique data_id for ggiraph hit-testing
+    summary_df <- summary_df %>%
+      mutate(
+        .tooltip = mapply(
+          make_tooltip_html,
+          demo_label  = as.character(.data[[demographic]]),
+          year        = .data$data_year,
+          pct         = .data$violence_percent,
+          raw_count   = .data$violence_count,
+          MoreArgs    = list(violence_type = violence_type, v_label = v_title),
+          SIMPLIFY    = TRUE
+        ),
+        .data_id = paste0(as.character(.data[[demographic]]), "_", .data$data_year)
+      )
+    summary_df <- apply_demographic_factor(summary_df, demographic, demo_levels)
+    # ggiraph geom_col_interactive + tooltip/data_id ignores fill level order unless
+    # group matches fill (otherwise bars dodge in row order).
+    summary_df$.demo_fill <- factor(
+      as.character(summary_df[[demographic]]),
+      levels = demo_levels
+    )
+    summary_df <- summary_df[order(summary_df$data_year, summary_df$.demo_fill), ]
 
     if (identical(chart_type, "line")) {
       summary_df <- summary_df %>%
         mutate(data_year = factor(as.character(.data$data_year), levels = as.character(x_breaks))) %>%
         arrange(.data$data_year, .data[[demographic]])
+
       p <- ggplot(summary_df, aes(
-        x = .data$data_year,
-        y = .data$value,
-        color = .data[[demographic]],
-        group = .data[[demographic]]
+        x     = .data$data_year,
+        y     = .data$value,
+        color = .data$.demo_fill,
+        linetype = .data$.demo_fill,
+        shape = .data$.demo_fill,
+        group = .data$.demo_fill
       )) +
         geom_line(linewidth = 1.15) +
-        geom_point(size = 3.2) +
-        geom_text(aes(label = .data$label), vjust = -0.8, size = 4.2, show.legend = FALSE) +
-        scale_color_manual(values = fill_values, name = graph_labels[demographic]) +
+        # Interactive points — tooltip only appears on the plotted dot, not along the line
+        ggiraph::geom_point_interactive(
+          aes(tooltip = .data$.tooltip, data_id = .data$.data_id),
+          size = 3.2
+        ) +
+        geom_text(aes(label = .data$label), vjust = -0.8, size = 3, show.legend = FALSE)
+      p <- add_line_demographic_scales(p, demo_levels, demographic, graph_labels, fill_values)
+      p <- p +
         labs(x = "Year", y = y_lab, color = graph_labels[demographic], title = main_title) +
         plot_calvex_theme(leg_pos_main) +
         theme(legend.direction = if (narrow) "horizontal" else "vertical")
 
       if (stat_type == "percent" && identical(time_period, "past_year")) {
-        p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35) +
-          annotate(
-            "text",
-            x = mean(seq_along(x_breaks)),
-            y = 62.5,
-            label = "\u2192 100%",
-            size = 3.8,
-            color = "gray35",
-            fontface = "italic"
-          ) +
+        p <- p + geom_hline(yintercept = scale_max, color = "gray80", linewidth = 0.35) +
           scale_y_continuous(
             limits = c(0, ylim_max),
-            breaks = c(0, 20, 40, 60),
+            breaks = percent_breaks,
             expand = ggplot2::expansion(mult = c(0, 0))
           ) +
           coord_cartesian(clip = "off") +
@@ -774,64 +1190,97 @@ server <- function(input, output, session) {
         p <- p +
           scale_y_continuous(
             limits = c(0, ylim_max),
-            breaks = c(0, 20, 40, 60, 80, 100),
+            breaks = percent_breaks,
             expand = ggplot2::expansion(mult = c(0, 0))
           )
       } else {
         p <- p +
           scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
       }
-      print(p)
-      return(invisible(NULL))
+
+      return(ggiraph::girafe(
+        ggobj = p,
+        width_svg  = svg_w,
+        height_svg = svg_h,
+        options = girafe_default_options()
+      ))
     }
 
-    p <- ggplot(summary_df, aes(x = factor(.data$data_year), fill = .data[[demographic]]))
+    # ---- Bar chart ----
+    p <- ggplot(summary_df, aes(
+      x = factor(.data$data_year),
+      fill = .data$.demo_fill,
+      group = .data$.demo_fill
+    ))
     if (stat_type == "percent" && identical(time_period, "past_year")) {
-      p <- p + geom_hline(yintercept = 60, color = "gray80", linewidth = 0.35)
+      p <- p + geom_hline(yintercept = scale_max, color = "gray80", linewidth = 0.35)
     }
     p <- p +
-      geom_col(
-        aes(y = .data$denom_value),
-        position = position_dodge(width = 0.85),
-        alpha = 0.3,
-        width = 0.72,
-        show.legend = FALSE
-      ) +
+      # Background (denominator) bars — non-interactive
+      # geom_col(
+      #   aes(y = .data$denom_value),
+      #   position = position_dodge(width = 0.85),
+      #   alpha = 0.3,
+      #   width = 0.72,
+      #   show.legend = FALSE
+      # ) +
       geom_text(
-        aes(y = .data$denom_value, label = paste0(.data$n_total)),
+        aes(
+          y = .data$denom_value,
+          label = paste0(.data$n_total),
+          group = .data$.demo_fill
+        ),
         vjust = -0.35,
         position = position_dodge(width = 0.85),
-        size = 4,
+        size = label_size_n,
         color = "gray40",
         show.legend = FALSE
       ) +
-      geom_col(aes(y = .data$value), position = position_dodge(width = 0.85), width = 0.72) +
+      # Value bars — interactive: tooltip + hover highlight
+      ggiraph::geom_col_interactive(
+        aes(
+          y        = .data$value,
+          tooltip  = .data$.tooltip,
+          data_id  = .data$.data_id,
+          group    = .data$.demo_fill
+        ),
+        position = position_dodge(width = 0.85),
+        width    = 0.72
+      ) +
       geom_text(
-        aes(y = .data$value, label = .data$label),
+        aes(
+          y = .data$value,
+          label = .data$label,
+          group = .data$.demo_fill
+        ),
         vjust = -0.35,
         position = position_dodge(width = 0.85),
-        size = 4,
+        size = label_size_val,
         show.legend = FALSE
       ) +
-      scale_fill_manual(values = fill_values, name = graph_labels[demographic]) +
+      scale_fill_manual(
+        values = fill_values,
+        breaks = demo_levels,
+        limits = demo_levels,
+        name = graph_labels[demographic]
+      ) +
       labs(x = "Year", y = y_lab, fill = graph_labels[demographic], title = main_title) +
       plot_calvex_theme(leg_pos_main) +
       theme(legend.direction = if (narrow) "horizontal" else "vertical")
 
+    if (identical(demographic, "EDUC5")) {
+      p <- p + theme(
+        legend.title = element_text(size = 10),
+        legend.text  = element_text(size = 9),
+        legend.key.size = unit(0.75, "lines")
+      )
+    }
+
     if (stat_type == "percent" && identical(time_period, "past_year")) {
       p <- p +
-        annotate(
-          "text",
-          x = mean(seq_along(x_breaks)),
-          y = 62.5,
-          label = "\u2192 100%",
-          size = 3.8,
-          color = "gray35",
-          fontface = "italic"
-        ) +
         scale_y_continuous(
           limits = c(0, ylim_max),
-          breaks = c(0, 20, 40, 60),
+          breaks = percent_breaks,
           expand = ggplot2::expansion(mult = c(0, 0))
         ) +
         coord_cartesian(clip = "off") +
@@ -840,7 +1289,7 @@ server <- function(input, output, session) {
       p <- p +
         scale_y_continuous(
           limits = c(0, ylim_max),
-          breaks = c(0, 20, 40, 60, 80, 100),
+          breaks = percent_breaks,
           expand = ggplot2::expansion(mult = c(0, 0))
         )
     } else {
@@ -848,12 +1297,15 @@ server <- function(input, output, session) {
         scale_y_continuous(limits = c(0, ylim_max), expand = ggplot2::expansion(mult = c(0, 0.02)))
     }
 
-    print(p)
+    ggiraph::girafe(
+      ggobj = p,
+      width_svg  = svg_w,
+      height_svg = svg_h,
+      options = girafe_default_options()
+    )
   })
 
-  # dynamic height for subcategory plot container
-  # req() ensures this only creates the plotOutput while the panel is actually
-  # visible, preventing a 0px container that would cause device-size errors.
+  # Subcategory panel container (single faceted ggiraph plot)
   output$subcategory_plots_ui <- renderUI({
     req(isTRUE(input$show_subcategories),
         identical(input$time_period, "past_year"),
@@ -864,12 +1316,15 @@ server <- function(input, output, session) {
     req(n > 0)
     div(
       class = "calvex-plot-wrap",
-      plotOutput("subcategory_plots", height = "100%")
+      div(
+        class = "calvex-plot-inner",
+        ggiraph::girafeOutput("subcategory_plots", width = "100%", height = "100%")
+      )
     )
   })
 
-  # output: side-by-side subcategory plots (past year only, not IPV)
-  output$subcategory_plots <- renderPlot({
+  # output: stacked subcategory facets (past year only, not IPV) — ggiraph
+  output$subcategory_plots <- ggiraph::renderGirafe({
     req(isTRUE(input$show_subcategories),
         identical(input$time_period, "past_year"),
         input$violence != "ipv")
@@ -903,56 +1358,37 @@ server <- function(input, output, session) {
     )
     limits <- compute_shared_subcategory_limits(global_max, stat_type)
 
-    plot_list <- list()
-    plot_idx <- 0L
-    for (i in seq_along(config)) {
-      s <- summaries[[i]]
-      if (is.null(s)) next
-      plot_idx <- plot_idx + 1L
-      # PER-PANEL: scale each chart to its own tallest bar
-      # panel_max <- max(s$value, na.rm = TRUE)
-      # limits <- compute_panel_subcategory_limits(panel_max, stat_type)
-      # UNIFORM: use shared limits instead — ylim_max = limits$ylim_max, scale_max = limits$scale_max
-      p <- make_one_plot(
-        df,
-        violence_col = config[[i]]$col,
-        plot_title = config[[i]]$title,
-        demographic = demographic,
-        stat_type = stat_type,
-        show_overall = show_overall,
-        demographic_labels = demographic_labels,
-        graph_labels = graph_labels,
-        show_legend = identical(plot_idx, 1L),
-        chart_type = chart_type,
-        ylim_max = limits$ylim_max,
-        scale_max = limits$scale_max,
-        summary_df = s
-      )
-      if (!is.null(p)) plot_list[[length(plot_list) + 1L]] <- p
-    }
-    req(length(plot_list) > 0)
-    n <- length(plot_list)
-    pw_sub <- session$clientData[["output_subcategory_plots_width"]]
-    narrow_sub <- !is.null(pw_sub) && !is.na(pw_sub) && pw_sub < 700
-    ncol <- if (narrow_sub) 1L else if (n <= 3L) 1L else 3L
-    nrow <- ceiling(n / ncol)
+    p <- build_subcategory_combined_plot(
+      config = config,
+      summaries = summaries,
+      demographic = demographic,
+      stat_type = stat_type,
+      violence_type = violence_type,
+      show_overall = show_overall,
+      graph_labels = graph_labels,
+      limits = limits,
+      chart_type = chart_type
+    )
+    req(!is.null(p))
 
-    # tryCatch guards against the brief moment when the container is resized
-    # during a violence-type switch and the device dimensions are invalid.
-    tryCatch({
-      grid::grid.newpage()
-      grid::pushViewport(grid::viewport(layout = grid::grid.layout(nrow, ncol)))
-      for (i in seq_along(plot_list)) {
-        row <- (i - 1L) %/% ncol + 1L
-        col <- (i - 1L) %% ncol + 1L
-        print(plot_list[[i]], vp = grid::viewport(layout.pos.row = row, layout.pos.col = col))
-      }
-      grid::popViewport()
-    }, error = function(e) {
-      # Suppress transient device-size errors; Shiny will re-render once the
-      # container has settled at its correct dimensions.
-      NULL
-    })
+    n_panels <- sum(!vapply(summaries, is.null, logical(1L)))
+    pw_sub <- session$clientData[["output_subcategory_plots_width"]]
+    ph_sub <- session$clientData[["output_subcategory_plots_height"]]
+    svg_w <- if (!is.null(pw_sub) && !is.na(pw_sub) && pw_sub > 0) pw_sub / 96 else 8
+    svg_h <- if (!is.null(ph_sub) && !is.na(ph_sub) && ph_sub > 0) {
+      ph_sub / 96
+    } else {
+      3.5 + n_panels * 1.6
+    }
+    svg_w <- max(5, min(svg_w, 20))
+    svg_h <- max(3.5 + n_panels * 1.4, min(svg_h, 28))
+
+    ggiraph::girafe(
+      ggobj = p,
+      width_svg = svg_w,
+      height_svg = svg_h,
+      options = girafe_default_options()
+    )
   })
 
 }

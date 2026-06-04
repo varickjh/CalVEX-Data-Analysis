@@ -57,6 +57,6 @@ rsconnect::deployApp(
   appDir      = ".",
   appName     = APP_NAME,
   account     = SHINYAPPS_ACCOUNT,
-  appFiles    = c("app.R", "server.R", "ui.R"),
+  appFiles    = c("app.R", "server.R", "ui.R", "images/logo.png"),
   forceUpdate = TRUE
 )

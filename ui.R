@@ -1,6 +1,7 @@
 library(shiny)
 library(bslib)
 library(markdown) # for shinyapps.io deployment
+library(ggiraph)
 
 ui <- page_sidebar(
   fillable = TRUE,
@@ -13,6 +14,91 @@ ui <- page_sidebar(
       });"
     )),
     tags$style(HTML("
+      :root {
+        --calvex-purple-light: #E8D4F5;
+        --calvex-purple-mid: #CEA9EA;
+        --calvex-purple-hover: #B08FD4;
+        --calvex-purple-active: #8E6FB0;
+        --calvex-purple-border: rgba(107, 85, 142, 0.35);
+      }
+      .bslib-page-sidebar > .navbar,
+      .bslib-page-sidebar > header,
+      .bslib-page-sidebar .navbar {
+        background-color: var(--calvex-purple-light) !important;
+        border-bottom: 1px solid var(--calvex-purple-border);
+      }
+      .calvex-sidebar,
+      .calvex-sidebar.accordion,
+      .bslib-page-sidebar .calvex-sidebar {
+        background-color: var(--calvex-purple-light) !important;
+        border-right: 1px solid var(--calvex-purple-border);
+      }
+      .calvex-sidebar .accordion {
+        --bs-accordion-border-radius: 0;
+        --bs-accordion-inner-border-radius: 0;
+        border-radius: 0.375rem;
+        overflow: hidden;
+        border: 1px solid var(--calvex-purple-border);
+      }
+      .calvex-sidebar .accordion-item {
+        border: none;
+        border-bottom: 1px solid var(--calvex-purple-border);
+        border-radius: 0;
+        overflow: hidden;
+        margin-bottom: 0;
+        background-color: var(--calvex-purple-light);
+      }
+      .calvex-sidebar .accordion-item:last-child {
+        border-bottom: none;
+      }
+      .calvex-sidebar .accordion-button {
+        background-color: var(--calvex-purple-light) !important;
+        color: #000 !important;
+        font-weight: 600;
+        box-shadow: none !important;
+      }
+      .calvex-sidebar .accordion-button:hover {
+        background-color: #DDD0EF !important;
+        color: #000 !important;
+      }
+      .calvex-sidebar .accordion-button:not(.collapsed) {
+        background-color: var(--calvex-purple-mid) !important;
+        color: #000 !important;
+      }
+      .calvex-sidebar .accordion-button:not(.collapsed):hover {
+        background-color: var(--calvex-purple-hover) !important;
+        color: #000 !important;
+      }
+      .calvex-sidebar .accordion-item:has(.accordion-button:not(.collapsed)) {
+        background-color: var(--calvex-purple-mid);
+      }
+      .calvex-sidebar .accordion-item:has(.accordion-button:not(.collapsed)) .accordion-body {
+        background-color: var(--calvex-purple-light);
+      }
+      .calvex-sidebar .accordion-body {
+        background-color: var(--calvex-purple-light);
+        color: #000;
+      }
+      .calvex-app-title-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        text-decoration: none;
+        color: #000;
+        font-weight: 600;
+        font-size: 1.1rem;
+        cursor: pointer;
+      }
+      .calvex-app-title-link:hover {
+        color: #000;
+        text-decoration: none;
+        opacity: 0.85;
+      }
+      .calvex-logo {
+        height: 2.25rem;
+        width: auto;
+        display: block;
+      }
       .bslib-page-sidebar > .main { display: flex; flex-direction: column; min-height: 0; }
       .calvex-plot-wrap {
         min-height: 280px;
@@ -50,19 +136,27 @@ ui <- page_sidebar(
     "))
   ),
 
-  # page title
-  title = "California Violence Experiences (CalVEX) Online Data Visualization Tool",
+  # page title (logo + link resets app to defaults)
+  title = tags$a(
+    id = "calvex_home_reset",
+    class = "calvex-app-title-link",
+    href = "#",
+    onclick = "Shiny.setInputValue('reset_to_defaults', Date.now()); return false;",
+    tags$img(src = "images/logo.png", alt = "CalVEX logo", class = "calvex-logo"),
+    tags$span(class = "calvex-app-title-text", "Online Data Visualization Tool")
+  ),
 
   # sidebar Layout
   sidebar = sidebar(
     open = list(desktop = "open", mobile = "closed"),
     collapsible = TRUE,
+    class = "calvex-sidebar",
 
     # graph time selection: Lifetime or Past Year
     selectInput("time_period", "Time Period:",
-      # choices = list("Lifetime" = "lifetime",
-      #             "Past Year" = "past_year"),
-      choices = list("Past Year" = "past_year"),
+      choices = list("Lifetime" = "lifetime",
+                  "Past Year" = "past_year"),
+      # choices = list("Past Year" = "past_year"),
       selected = "past_year"
     ),
 
@@ -227,7 +321,7 @@ ui <- page_sidebar(
         "Time & Location",
 
         checkboxGroupInput(
-          "YEAR", "Survey Year:",
+          "YEAR", "Survey Year:", 
           choices  = list("2025" = 2025, "2023" = 2023, "2022" = 2022, "2021" = 2021, "2020" = 2020),
           selected = c(2025, 2023, 2022, 2021, 2020)
         ),
@@ -290,8 +384,9 @@ ui <- page_sidebar(
       class = "calvex-plot-wrap",
       div(
         class = "calvex-plot-inner",
-        plotOutput(
+        ggiraph::girafeOutput(
           "histogram",
+          width  = "100%",
           height = "100%"
         )
       ),
@@ -321,4 +416,3 @@ ui <- page_sidebar(
   #   )
   # )
 )
-
