@@ -4,6 +4,10 @@ library(markdown) # for shinyapps.io deployment
 library(ggiraph)
 
 ui <- page_sidebar(
+  theme = bslib::bs_theme(
+    base_font = bslib::font_google("Inter"),
+    heading_font = bslib::font_google("Inter")
+  ),
   fillable = TRUE,
   fillable_mobile = TRUE,
   # trigger a resize once Shiny finishes its first render so plot fills the container height
@@ -20,6 +24,22 @@ ui <- page_sidebar(
         --calvex-purple-hover: #B08FD4;
         --calvex-purple-active: #8E6FB0;
         --calvex-purple-border: rgba(107, 85, 142, 0.35);
+        --calvex-font: Inter, sans-serif;
+      }
+      body,
+      .bslib-page-sidebar {
+        font-family: var(--calvex-font);
+      }
+      .calvex-sidebar select,
+      .calvex-sidebar .form-select,
+      .calvex-sidebar .shiny-input-select,
+      .calvex-sidebar .checkbox label,
+      .calvex-sidebar .form-check-label,
+      .calvex-sidebar .shiny-options-group label,
+      .calvex-sidebar .selectize-input,
+      .calvex-sidebar .selectize-dropdown,
+      .calvex-sidebar .selectize-dropdown-content {
+        font-family: var(--calvex-font) !important;
       }
       .bslib-page-sidebar > .navbar,
       .bslib-page-sidebar > header,
@@ -32,15 +52,8 @@ ui <- page_sidebar(
       .bslib-page-sidebar .calvex-sidebar {
         background-color: var(--calvex-purple-light) !important;
         border-right: 1px solid var(--calvex-purple-border);
-      }
-      .bslib-sidebar-layout > .sidebar {
-        overflow: hidden !important;
-      }
-      .bslib-sidebar-layout > .sidebar > .sidebar-content {
         overflow-y: auto !important;
-        overflow-x: hidden !important;
         -webkit-overflow-scrolling: touch;
-        max-height: 100%;
       }
       .calvex-sidebar .accordion {
         --bs-accordion-border-radius: 0;

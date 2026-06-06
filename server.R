@@ -273,7 +273,7 @@ server <- function(input, output, session) {
         caption = 9, legend_key = 1
       )
     }
-    theme_minimal(base_size = sz$base) +
+    theme_minimal(base_size = sz$base, base_family = "Inter") +
       theme(
         axis.title      = element_text(size = sz$axis_title,   face = "bold"),
         axis.text       = element_text(size = sz$axis_text),
@@ -596,7 +596,7 @@ server <- function(input, output, session) {
       ggiraph::opts_tooltip(
         css = paste0(
           "background:transparent;border:none;padding:0;",
-          "box-shadow:none;font-family:sans-serif;"
+          "box-shadow:none;font-family:Inter,sans-serif;"
         ),
         use_fill = FALSE,
         use_stroke = FALSE,
@@ -1044,7 +1044,7 @@ server <- function(input, output, session) {
     verb <- if (violence_type %in% c("sexual_perp", "physical_perp")) "perpetrating" else "experiencing"
     interp <- paste0(demo_label, " ", verb, " ", v_label, " in ", year)
     paste0(
-      "<div style='font-family:sans-serif;font-size:13px;line-height:1.6;",
+      "<div style='font-family:Inter,sans-serif;font-size:13px;line-height:1.6;",
       "background:#fff;border:1px solid #ccc;border-radius:6px;",
       "padding:8px 12px;box-shadow:2px 2px 6px rgba(0,0,0,.15);min-width:180px;'>",
       "<b>", interp, "</b><br/>",
