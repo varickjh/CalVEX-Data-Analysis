@@ -33,6 +33,15 @@ ui <- page_sidebar(
         background-color: var(--calvex-purple-light) !important;
         border-right: 1px solid var(--calvex-purple-border);
       }
+      .bslib-sidebar-layout > .sidebar {
+        overflow: hidden !important;
+      }
+      .bslib-sidebar-layout > .sidebar > .sidebar-content {
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        max-height: 100%;
+      }
       .calvex-sidebar .accordion {
         --bs-accordion-border-radius: 0;
         --bs-accordion-inner-border-radius: 0;
@@ -104,6 +113,8 @@ ui <- page_sidebar(
         min-height: 280px;
         height: calc(100dvh - 80px);
         height: calc(100vh - 80px);
+        max-height: calc(100dvh - 140px);
+        max-height: calc(100vh - 140px);
         display: flex;
         flex-direction: column;
         position: relative;
@@ -195,6 +206,20 @@ ui <- page_sidebar(
       choices = list("Percent Experiencing Violence" = "percent",
                   "Raw Number Experiencing Violence" = "count"),
       selected = "percent"
+    ),
+
+    # Y-axis max slider — only shown for percent + past-year (the only mode with truncation)
+    conditionalPanel(
+      condition = "input.statistics == 'percent' && input.time_period == 'past_year'",
+      sliderInput(
+        "scale_max_override",
+        "Y-axis Max (%):",
+        min   = 5,
+        max   = 100,
+        value = 40,
+        step  = 5,
+        ticks = FALSE
+      )
     ),
 
     # overall toggle (applies to all demographic types)
