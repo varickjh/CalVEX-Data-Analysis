@@ -4,6 +4,10 @@ library(markdown) # for shinyapps.io deployment
 library(ggiraph)
 
 ui <- page_sidebar(
+  theme = bslib::bs_theme(
+    base_font = bslib::font_google("Inter"),
+    heading_font = bslib::font_google("Inter")
+  ),
   fillable = TRUE,
   fillable_mobile = TRUE,
   # trigger a resize once Shiny finishes its first render so plot fills the container height
@@ -20,6 +24,22 @@ ui <- page_sidebar(
         --calvex-purple-hover: #B08FD4;
         --calvex-purple-active: #8E6FB0;
         --calvex-purple-border: rgba(107, 85, 142, 0.35);
+        --calvex-font: Inter, sans-serif;
+      }
+      body,
+      .bslib-page-sidebar {
+        font-family: var(--calvex-font);
+      }
+      .calvex-sidebar select,
+      .calvex-sidebar .form-select,
+      .calvex-sidebar .shiny-input-select,
+      .calvex-sidebar .checkbox label,
+      .calvex-sidebar .form-check-label,
+      .calvex-sidebar .shiny-options-group label,
+      .calvex-sidebar .selectize-input,
+      .calvex-sidebar .selectize-dropdown,
+      .calvex-sidebar .selectize-dropdown-content {
+        font-family: var(--calvex-font) !important;
       }
       .bslib-page-sidebar > .navbar,
       .bslib-page-sidebar > header,
@@ -32,6 +52,8 @@ ui <- page_sidebar(
       .bslib-page-sidebar .calvex-sidebar {
         background-color: var(--calvex-purple-light) !important;
         border-right: 1px solid var(--calvex-purple-border);
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
       }
       .calvex-sidebar .accordion {
         --bs-accordion-border-radius: 0;
@@ -104,6 +126,8 @@ ui <- page_sidebar(
         min-height: 280px;
         height: calc(100dvh - 80px);
         height: calc(100vh - 80px);
+        max-height: calc(100dvh - 140px);
+        max-height: calc(100vh - 140px);
         display: flex;
         flex-direction: column;
         position: relative;
@@ -195,6 +219,20 @@ ui <- page_sidebar(
       choices = list("Percent Experiencing Violence" = "percent",
                   "Raw Number Experiencing Violence" = "count"),
       selected = "percent"
+    ),
+
+    # Y-axis max slider — only shown for percent + past-year (the only mode with truncation)
+    conditionalPanel(
+      condition = "input.statistics == 'percent' && input.time_period == 'past_year'",
+      sliderInput(
+        "scale_max_override",
+        "Y-axis Max (%):",
+        min   = 5,
+        max   = 100,
+        value = 40,
+        step  = 5,
+        ticks = FALSE
+      )
     ),
 
     # overall toggle (applies to all demographic types)
