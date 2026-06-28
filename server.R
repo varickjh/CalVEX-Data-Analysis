@@ -329,7 +329,37 @@ server <- function(input, output, session) {
     updateCheckboxGroupInput(session, "CA_REGION", selected = 1:5)
     updateSliderInput(session, "scale_max_override", value = 40)
   }, ignoreInit = TRUE)
- 
+
+  # Demographic display selection: validation (Overall or category) or title-only mode.
+  demographic_display_selection <- function(demographic, categories_only = FALSE) {
+    categories_unselected <- is.null(input[[demographic]]) || length(input[[demographic]]) == 0L
+    if (categories_only) return(categories_unselected)
+    (is.null(input$overall) || isTRUE(input$overall)) || !categories_unselected
+  }
+
+  overall_or_demographic_validation_msg <- function(demographic) {
+    sprintf(
+      'Please select at least one of "Overall" or %s labels',
+      graph_labels[demographic]
+    )
+  }
+
+  build_main_chart_title <- function(
+    v_title, demographic, graph_labels, data_years, narrow, only_overall = FALSE
+  ) {
+    if (isTRUE(only_overall)) {
+      return(paste(v_title, "Experienced by all Californians"))
+    }
+    if (narrow) {
+      paste(v_title, "Experienced by", graph_labels[demographic])
+    } else {
+      paste(
+        v_title, "Experienced by", graph_labels[demographic], "\u2013",
+        paste(sort(unique(data_years)), collapse = ", ")
+      )
+    }
+  }
+
   filtered_data <- reactive({
     df <- calvex_data
     time_period <- input$time_period
@@ -1064,7 +1094,11 @@ server <- function(input, output, session) {
     }
     shiny::validate(
       need(length(input$YEAR) > 0, "Please select at least one survey year."),
-      need(length(input$CA_REGION) > 0, "Please select at least one California region.")
+      need(length(input$CA_REGION) > 0, "Please select at least one California region."),
+      need(
+        demographic_display_selection(input$demographic),
+        overall_or_demographic_validation_msg(input$demographic)
+      )
     )
     df <- filtered_data()
     demographic <- input$demographic
@@ -1169,12 +1203,12 @@ server <- function(input, output, session) {
     pw <- session$clientData[["output_histogram_width"]]
     ph <- session$clientData[["output_histogram_height"]]
     narrow <- !is.null(pw) && !is.na(pw) && pw < 700
+    only_overall <- demographic_display_selection(demographic, categories_only = TRUE)
 
-    main_title <- if (narrow) {
-      paste(v_title, "Experience by", graph_labels[demographic])
-    } else {
-      paste(v_title, "Experience by", graph_labels[demographic], "\u2013", paste(sort(unique(df$data_year)), collapse = ", "))
-    }
+    main_title <- build_main_chart_title(
+      v_title, demographic, graph_labels, df$data_year, narrow,
+      only_overall = only_overall
+    )
 
     fill_values <- demographic_fill_values(demographic, demo_levels)
 
@@ -1399,7 +1433,11 @@ server <- function(input, output, session) {
         input$violence != "ipv")
     shiny::validate(
       need(length(input$YEAR) > 0, "Please select at least one survey year."),
-      need(length(input$CA_REGION) > 0, "Please select at least one California region.")
+      need(length(input$CA_REGION) > 0, "Please select at least one California region."),
+      need(
+        demographic_display_selection(input$demographic),
+        overall_or_demographic_validation_msg(input$demographic)
+      )
     )
     df <- filtered_data()
     violence_type <- input$violence
