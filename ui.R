@@ -19,7 +19,7 @@ ui <- page_sidebar(
     )),
     tags$style(HTML("
       :root {
-        --calvex-purple-light: #E8D4F5;
+        --calvex-purple-light: #c8b8e2;
         --calvex-purple-mid: #CEA9EA;
         --calvex-purple-hover: #B08FD4;
         --calvex-purple-active: #8E6FB0;
@@ -52,8 +52,25 @@ ui <- page_sidebar(
       .bslib-page-sidebar .calvex-sidebar {
         background-color: var(--calvex-purple-light) !important;
         border-right: 1px solid var(--calvex-purple-border);
+        /* The aside is the single scroll container across all breakpoints.
+           max-height caps it so overflow-y: auto triggers. translateZ(0)
+           forces a GPU compositor layer, fixing iOS Safari scroll freeze
+           after accordion DOM changes. */
+        max-height: 100dvh;
+        max-height: 100vh;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        position: relative;
+        transform: translateZ(0);
+      }
+      /* bslib on mobile makes .sidebar-content the scroll container (height:100%;
+         overflow-y:auto). Override so the aside stays the unified scroll container
+         and .sidebar-content just grows to its natural height. */
+      .bslib-page-sidebar .sidebar.calvex-sidebar .sidebar-content {
+        height: auto !important;
+        max-height: none !important;
+        overflow-y: visible !important;
       }
       .calvex-sidebar .accordion {
         --bs-accordion-border-radius: 0;
@@ -167,7 +184,7 @@ ui <- page_sidebar(
     href = "#",
     onclick = "Shiny.setInputValue('reset_to_defaults', Date.now()); return false;",
     tags$img(src = "images/logo.png", alt = "CalVEX logo", class = "calvex-logo"),
-    tags$span(class = "calvex-app-title-text", "Online Data Visualization Tool")
+    tags$span(class = "calvex-app-title-text", "VEX Data Visualization Tool")
   ),
 
   # sidebar Layout
