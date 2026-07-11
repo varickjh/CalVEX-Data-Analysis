@@ -134,7 +134,7 @@ ui <- page_sidebar(
         opacity: 0.85;
       }
       .calvex-logo {
-        height: 2.25rem;
+        height: 3.25rem;
         width: auto;
         display: block;
       }
@@ -183,7 +183,7 @@ ui <- page_sidebar(
     class = "calvex-app-title-link",
     href = "#",
     onclick = "Shiny.setInputValue('reset_to_defaults', Date.now()); return false;",
-    tags$img(src = "images/logo.png", alt = "CalVEX logo", class = "calvex-logo"),
+    tags$img(src = "images/logo-black.png", alt = "CalVEX logo", class = "calvex-logo"),
     tags$span(class = "calvex-app-title-text", "VEX Data Visualization Tool")
   ),
 
@@ -211,9 +211,10 @@ ui <- page_sidebar(
       selected = "physical"
     ),
 
-    # graph select demographic
-    selectInput("demographic", "Display by Demographic:",
+    # graph select comparison group (demographics + California region)
+    selectInput("demographic", "Compare by:",
       choices = list("Gender" = "GENDER",
+        "California Region" = "CA_REGION",
         "Age" = "AGE_6",
         "Race/Ethnicity" = "RACE_5",
         "Sexuality" = "LGB_3",
