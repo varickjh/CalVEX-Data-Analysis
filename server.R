@@ -6,10 +6,12 @@ library(httr)
 library(jsonlite)
 library(ggiraph)
  
+# Register at source time (not per-session) so the logo resolves even on the
+# very first page load, before any Shiny session has connected.
+addResourcePath("images", file.path(getwd(), "images"))
+
 server <- function(input, output, session) {
- 
-  addResourcePath("images", file.path(getwd(), "images"))
- 
+
   # ---------------------------------------------------------------------------
   # Data loading via Supabase Data API (PostgREST)
   # PostgREST caps each response at 1000 rows, so we paginate in batches
@@ -101,9 +103,18 @@ server <- function(input, output, session) {
     "4" = "Hispanic",
     "5" = "Other/multiple races, Non-Hispanic"
   )
+  # California region labels (graph)
+  region_labels <- c(
+    "1" = "Bay Region",
+    "2" = "Central Valley",
+    "3" = "Mountain Valley",
+    "4" = "Northern",
+    "5" = "Southern"
+  )
   # legend labels
   graph_labels <- c(
   "GENDER" = "Gender",
+  "CA_REGION" = "California Region",
   "AGE_6" = "Age",
   "RACE_5" = "Race/Ethnicity",
   "LGB_3" = "Sexuality",
@@ -112,10 +123,11 @@ server <- function(input, output, session) {
   "EMPLOY_2" = "Employment Status",
   "DISABILITY" = "Disability Status"
   )
- 
+
   # map demographic variable name -> code-to-label vector (for filtering which bars to show)
   demographic_labels <- list(
     GENDER = gender_labels,
+    CA_REGION = region_labels,
     AGE_6 = age_labels,
     RACE_5 = race_labels,
     LGB_3 = sexuality_labels,
@@ -344,17 +356,32 @@ server <- function(input, output, session) {
     )
   }
 
+  # Experiences: "Past-Year Experiences of Physical Violence by Gender"
+  # Perpetration: "Past-Year Sexual Violence Perpetrated by Gender"
+  # No categories selected: group label becomes "all Californians"
   build_main_chart_title <- function(
-    v_title, demographic, graph_labels, data_years, narrow, only_overall = FALSE
+    violence_type, time_period, demographic, graph_labels, data_years, narrow,
+    only_overall = FALSE
   ) {
-    if (isTRUE(only_overall)) {
-      return(paste(v_title, "Experienced by all Californians"))
+    tp_prefix <- if (identical(time_period, "lifetime")) "Lifetime" else "Past-Year"
+    v_base <- switch(violence_type,
+      physical      = "Physical Violence",
+      sexual        = "Sexual Violence",
+      ipv           = "Intimate Partner Violence",
+      sexual_perp   = "Sexual Violence",
+      physical_perp = "Physical Violence"
+    )
+    stem <- if (violence_type %in% c("sexual_perp", "physical_perp")) {
+      paste(tp_prefix, v_base, "Perpetrated by")
+    } else {
+      paste(tp_prefix, "Experiences of", v_base, "by")
     }
-    if (narrow) {
-      paste(v_title, "Experienced by", graph_labels[demographic])
+    group_label <- if (isTRUE(only_overall)) "all Californians" else graph_labels[demographic]
+    if (isTRUE(only_overall) || narrow) {
+      paste(stem, group_label)
     } else {
       paste(
-        v_title, "Experienced by", graph_labels[demographic], "\u2013",
+        stem, group_label, "\u2013",
         paste(sort(unique(data_years)), collapse = ", ")
       )
     }
@@ -450,18 +477,34 @@ server <- function(input, output, session) {
       levels = names(disability_labels),
       labels = disability_labels
     )
+    df$CA_REGION <- factor(
+      df$CA_REGION,
+      levels = names(region_labels),
+      labels = region_labels
+    )
     df
   })
  
   # Build footnote lines based on current violence type
-  build_footnote_lines <- function(violence_type, time_period = NULL, stat_type = NULL) {
-    lines <- "* Background bars represent the total\n  number of people surveyed in that\n  demographic"
+  build_footnote_lines <- function(violence_type, time_period = NULL, stat_type = NULL,
+                                   demographic = NULL) {
+    lines <- "* Hover over or click a bar to see the raw count, shown as the number experiencing violence out of the total number of people surveyed in that group"
+    lines <- c(
+      lines,
+      "* We asked respondents about their experiences of violence across their lifetime (“ever”) and also about their experiences in the past year"
+    )
     if (violence_type == "ipv") {
       lines <- c(lines, "* IPV is only available in 2023 and 2025")
     } else if (violence_type == "sexual_perp") {
       lines <- c(lines, "* Past year sexual violence perpetration was not asked in 2020")
     } else if (violence_type == "physical_perp") {
       lines <- c(lines, "* Past year physical violence perpetration was not asked in 2020")
+    }
+    if (identical(demographic, "CA_REGION")) {
+      lines <- c(
+        lines,
+        "* Region comparisons include only years with region data; respondents with missing region are excluded"
+      )
     }
     if (!is.null(time_period) && !is.null(stat_type) &&
         identical(time_period, "past_year") && identical(stat_type, "percent")) {
@@ -633,6 +676,11 @@ server <- function(input, output, session) {
         delay_mouseout = 200
       ),
       ggiraph::opts_hover(css = "opacity:0.85;cursor:crosshair;"),
+      # Clicked bars/points highlight blue (ggiraph's default selected style is red)
+      ggiraph::opts_selection(
+        type = "multiple",
+        css = "fill:#4682B4;stroke:#4682B4;"
+      ),
       ggiraph::opts_toolbar(saveaspng = FALSE)
     )
   }
@@ -678,7 +726,7 @@ server <- function(input, output, session) {
     fill_values <- demographic_fill_values(demographic, demo_levels)
     x_breaks <- sort(unique(as.integer(summary_df$data_year)))
  
-    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5", "CA_REGION")
     label_size_val <- if (dense_demo) sz$label_dense_val else sz$label_val
  
     summary_df <- summary_df %>%
@@ -689,6 +737,7 @@ server <- function(input, output, session) {
           year = .data$data_year,
           pct = .data$violence_percent,
           raw_count = .data$violence_count,
+          n_total = .data$n_total,
           MoreArgs = list(violence_type = violence_type, v_label = plot_title),
           SIMPLIFY = TRUE
         ),
@@ -830,7 +879,7 @@ server <- function(input, output, session) {
   build_subcategory_combined_plot <- function(
     config, summaries, demographic, stat_type, violence_type,
     show_overall, graph_labels, limits, chart_type,
-    sz = NULL
+    sz = NULL, show_legend = TRUE
   ) {
     if (is.null(sz)) sz <- responsive_text_sizes(NULL)
     chunks <- list()
@@ -854,7 +903,7 @@ server <- function(input, output, session) {
     combined <- apply_demographic_factor(combined, demographic, demo_levels)
     fill_values <- demographic_fill_values(demographic, demo_levels)
  
-    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5", "CA_REGION")
     label_size_val <- if (dense_demo) sz$label_dense_val else sz$label_val
  
     if (stat_type == "percent") {
@@ -878,6 +927,7 @@ server <- function(input, output, session) {
           year = .data$data_year,
           pct = .data$violence_percent,
           raw_count = .data$violence_count,
+          n_total = .data$n_total,
           v_label = as.character(.data$panel_title),
           MoreArgs = list(violence_type = violence_type),
           SIMPLIFY = TRUE
@@ -897,7 +947,7 @@ server <- function(input, output, session) {
  
     subcat_combined_theme <- function() {
       theme(
-        legend.position  = "bottom",
+        legend.position  = if (show_legend) "bottom" else "none",
         legend.direction = "horizontal",
         legend.box       = "horizontal",
         legend.box.just  = "center",
@@ -1038,9 +1088,9 @@ server <- function(input, output, session) {
     if (isTRUE(input$show_subcategories) &&
         identical(tp, "past_year") &&
         !identical(vt, "ipv")) {
-      lines <- build_footnote_lines(vt, "past_year", st)
+      lines <- build_footnote_lines(vt, "past_year", st, input$demographic)
     } else {
-      lines <- build_footnote_lines(vt, tp, st)
+      lines <- build_footnote_lines(vt, tp, st, input$demographic)
     }
     note_html <- lapply(lines, function(ln) tags$p(style = "margin: 0.35rem 0; font-size: 0.9rem; color: #555;", ln))
     tags$div(
@@ -1058,7 +1108,7 @@ server <- function(input, output, session) {
     )
     vt <- input$violence
     st <- input$statistics
-    lines <- build_footnote_lines(vt, "past_year", st)
+    lines <- build_footnote_lines(vt, "past_year", st, input$demographic)
     note_html <- lapply(lines, function(ln) tags$p(style = "margin: 0.35rem 0; font-size: 0.9rem; color: #555;", ln))
     tags$div(
       style = "padding: 0.5rem 0.25rem 0.75rem; max-width: 100%;",
@@ -1070,7 +1120,7 @@ server <- function(input, output, session) {
   # ---------------------------------------------------------------------------
   # Helper: build ggiraph tooltip HTML for one summary_df row
   # ---------------------------------------------------------------------------
-  make_tooltip_html <- function(demo_label, year, pct, raw_count, violence_type, v_label) {
+  make_tooltip_html <- function(demo_label, year, pct, raw_count, n_total, violence_type, v_label) {
     verb <- if (violence_type %in% c("sexual_perp", "physical_perp")) "perpetrating" else "experiencing"
     interp <- paste0(demo_label, " ", verb, " ", v_label, " in ", year)
     paste0(
@@ -1080,7 +1130,7 @@ server <- function(input, output, session) {
       "<b>", interp, "</b><br/>",
       "<span style='color:#555;'>Year:</span> <b>", year, "</b><br/>",
       "<span style='color:#555;'>Percentage:</span> <b>", round(pct, 1), "%</b><br/>",
-      "<span style='color:#555;'>Raw count:</span> <b>", raw_count, "</b>",
+      "<span style='color:#555;'>Raw count:</span> <b>", raw_count, "/", n_total, "</b>",
       "</div>"
     )
   }
@@ -1206,7 +1256,7 @@ server <- function(input, output, session) {
     only_overall <- demographic_display_selection(demographic, categories_only = TRUE)
 
     main_title <- build_main_chart_title(
-      v_title, demographic, graph_labels, df$data_year, narrow,
+      violence_type, time_period, demographic, graph_labels, df$data_year, narrow,
       only_overall = only_overall
     )
 
@@ -1221,12 +1271,13 @@ server <- function(input, output, session) {
     svg_w <- max(4, min(svg_w, 20))
     svg_h <- max(3, min(svg_h, 14))
  
-    leg_pos_main <- if (narrow) "bottom" else "right"
+    # No demographic categories selected -> only Overall shows; a one-entry
+    # legend is redundant with the "all Californians" title, so drop it.
+    leg_pos_main <- if (only_overall) "none" else if (narrow) "bottom" else "right"
  
-    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5")
-    label_size_n   <- if (dense_demo) sz$label_dense_n   else sz$label_n
+    dense_demo <- demographic %in% c("AGE_6", "RACE_5", "INCOME_QUINTILE", "EDUC5", "CA_REGION")
     label_size_val <- if (dense_demo) sz$label_dense_val else sz$label_val
- 
+
     # Build per-row tooltip HTML and a unique data_id for ggiraph hit-testing
     summary_df <- summary_df %>%
       mutate(
@@ -1236,6 +1287,7 @@ server <- function(input, output, session) {
           year        = .data$data_year,
           pct         = .data$violence_percent,
           raw_count   = .data$violence_count,
+          n_total     = .data$n_total,
           MoreArgs    = list(violence_type = violence_type, v_label = v_title),
           SIMPLIFY    = TRUE
         ),
@@ -1319,27 +1371,8 @@ server <- function(input, output, session) {
       p <- p + geom_hline(yintercept = scale_max, color = "gray80", linewidth = 0.35)
     }
     p <- p +
-      # Background (denominator) bars — non-interactive
-      # geom_col(
-      #   aes(y = .data$denom_value),
-      #   position = position_dodge(width = 0.85),
-      #   alpha = 0.3,
-      #   width = 0.72,
-      #   show.legend = FALSE
-      # ) +
-      geom_text(
-        aes(
-          y = .data$denom_value,
-          label = paste0(.data$n_total),
-          group = .data$.demo_fill
-        ),
-        vjust = -0.35,
-        position = position_dodge(width = 0.85),
-        size = label_size_n,
-        color = "gray40",
-        show.legend = FALSE
-      ) +
       # Value bars — interactive: tooltip + hover highlight
+      # (denominator n is shown in the tooltip as raw_count/n_total)
       ggiraph::geom_col_interactive(
         aes(
           y        = .data$value,
@@ -1487,7 +1520,8 @@ server <- function(input, output, session) {
       graph_labels = graph_labels,
       limits = limits,
       chart_type = chart_type,
-      sz = responsive_text_sizes(pw_sub)
+      sz = responsive_text_sizes(pw_sub),
+      show_legend = !demographic_display_selection(demographic, categories_only = TRUE)
     )
     req(!is.null(p))
  
