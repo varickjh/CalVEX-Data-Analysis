@@ -120,7 +120,7 @@ ui <- page_fillable(
         text-transform: uppercase;
         font-size: 0.7rem;
         letter-spacing: 0.07em;
-        color: #000;
+        color: #4A3D66;
         font-weight: 700;
         margin-bottom: 0.4rem;
       }
@@ -173,7 +173,6 @@ ui <- page_fillable(
         border-radius: 0.375rem;
         overflow: hidden;
         border: 1px solid var(--calvex-purple-border);
-        background-color: var(--calvex-purple-light);
       }
       .calvex-sidebar .accordion-item {
         border: none;
@@ -185,10 +184,8 @@ ui <- page_fillable(
       .calvex-sidebar .accordion-button {
         background-color: var(--calvex-purple-light) !important;
         color: #000 !important;
-        font-weight: 700;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 0.07em;
+        font-weight: 600;
+        font-size: 0.95rem;
         padding: 0.7rem 0.9rem;
         box-shadow: none !important;
       }
