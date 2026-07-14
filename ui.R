@@ -39,6 +39,7 @@ ui <- page_fillable(
   fillable_mobile = TRUE,
   # trigger a resize once Shiny finishes its first render so plot fills the container height
   tags$head(
+    tags$link(rel = "preload", href = "images/logo-black.png", as = "image"),
     tags$script(HTML(
       "$(document).one('shiny:idle', function() {
         setTimeout(function() { $(window).trigger('resize'); }, 10);
@@ -96,7 +97,7 @@ ui <- page_fillable(
         opacity: 0.85;
       }
       .calvex-logo {
-        height: 3.25rem;
+        height: 3.575rem;
         width: auto;
         display: block;
       }
@@ -375,7 +376,7 @@ ui <- page_fillable(
         }
         .calvex-topbar .selectize-input { font-size: 0.85rem; }
         .calvex-control--slider > .shiny-input-container { flex: 1 1 100%; }
-        .calvex-logo { height: 2.5rem; }
+        .calvex-logo { height: 2.75rem; }
         .calvex-app-title-link { font-size: 1rem; }
         .calvex-plot-wrap { padding: 6px 4px 4px; min-height: 360px; }
       }
