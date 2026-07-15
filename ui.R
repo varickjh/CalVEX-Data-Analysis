@@ -37,12 +37,62 @@ ui <- page_fillable(
   padding = 0,
   gap = 0,
   fillable_mobile = TRUE,
-  # trigger a resize once Shiny finishes its first render so plot fills the container height
+  # Keep the ggiraph plot sized to its *actual* available space at all times.
+  # Shiny/ggiraph only remeasure container size on a window 'resize' event —
+  # they don't notice purely content-driven reflows (e.g. the footnotes below
+  # the plot rendering after the plot's first paint, or wrapping to an extra
+  # line at narrow/zoomed widths). Without this, the plot keeps the taller
+  # pre-footnote size baked in, overflows past its own box, and overlaps the
+  # footnotes text. A ResizeObserver on the plot container(s) catches every
+  # such reflow (not just the first one) and re-triggers a 'resize' so the
+  # plot always re-renders at the correct, current size.
   tags$head(
     tags$link(rel = "preload", href = "images/logo-black.png", as = "image"),
     tags$script(HTML(
       "$(document).one('shiny:idle', function() {
-        setTimeout(function() { $(window).trigger('resize'); }, 10);
+        if (typeof ResizeObserver === 'undefined') {
+          setTimeout(function() { $(window).trigger('resize'); }, 10);
+          return;
+        }
+        var resizeTimer = null;
+        var lastSizes = new WeakMap();
+        function scheduleResize() {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(function() { $(window).trigger('resize'); }, 60);
+        }
+        var observer = new ResizeObserver(function(entries) {
+          entries.forEach(function(entry) {
+            var w = Math.round(entry.contentRect.width);
+            var h = Math.round(entry.contentRect.height);
+            var prev = lastSizes.get(entry.target);
+            if (!prev || prev.w !== w || prev.h !== h) {
+              lastSizes.set(entry.target, { w: w, h: h });
+              scheduleResize();
+            }
+          });
+        });
+        function observeAll(root) {
+          if (!root.querySelectorAll) return;
+          root.querySelectorAll('.calvex-plot-inner').forEach(function(el) {
+            observer.observe(el);
+          });
+        }
+        observeAll(document);
+        // The subcategory grid's '.calvex-plot-inner' is only inserted into
+        // the DOM later (via renderUI, when the user toggles it on), so also
+        // watch for newly-added plot containers and observe those too.
+        new MutationObserver(function(mutations) {
+          mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+              if (node.nodeType !== 1) return;
+              if (node.classList && node.classList.contains('calvex-plot-inner')) {
+                observer.observe(node);
+              }
+              observeAll(node);
+            });
+          });
+        }).observe(document.body, { childList: true, subtree: true });
+        scheduleResize();
       });"
     )),
     tags$style(HTML("

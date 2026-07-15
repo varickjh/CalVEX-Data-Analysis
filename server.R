@@ -251,18 +251,29 @@ server <- function(input, output, session) {
   # px_w     : actual container pixel width from session$clientData
   # ref_w    : "full-size" reference width (default 960 px)
   # min_scale: floor — text never shrinks below this fraction of max size
+  # px_h/ref_h/min_scale_h : same idea, but for available height. The y-axis
+  #   title is rotated 90°, so its rendered length runs the full height of
+  #   the panel — when vertical space is tight (short window, browser zoom,
+  #   or footnotes eating into the plot's height), it needs to shrink
+  #   independently of the width-based scale so it's never clipped.
   #
   # Returns a named list of pt sizes to plug into theme() elements.
   # ---------------------------------------------------------------------------
-  responsive_text_sizes <- function(px_w, ref_w = 960, min_scale = 0.55) {
+  responsive_text_sizes <- function(px_w, ref_w = 960, min_scale = 0.55,
+                                     px_h = NULL, ref_h = 420, min_scale_h = 0.45) {
     s <- if (!is.null(px_w) && !is.na(px_w) && px_w > 0) {
       max(min_scale, min(1, px_w / ref_w))
     } else 1
- 
+
+    s_h <- if (!is.null(px_h) && !is.na(px_h) && px_h > 0) {
+      max(min_scale_h, min(1, px_h / ref_h))
+    } else 1
+
     list(
       scale        = s,
       base         = 14 * s,
       axis_title   = 14 * s,
+      axis_title_y = 14 * s * s_h,
       axis_text    = 12 * s,
       plot_title   = 18 * s,
       legend_title = 11 * s,
@@ -284,14 +295,19 @@ server <- function(input, output, session) {
   plot_calvex_theme <- function(legend_pos = "top", sz = NULL) {
     if (is.null(sz)) {
       sz <- list(
-        base = 14, axis_title = 14, axis_text = 12,
+        base = 14, axis_title = 14, axis_title_y = 14, axis_text = 12,
         plot_title = 18, legend_title = 11, legend_text = 10,
         caption = 9, legend_key = 1
       )
     }
+    axis_title_y_size <- if (!is.null(sz$axis_title_y)) sz$axis_title_y else sz$axis_title
     th <- theme_minimal(base_size = sz$base, base_family = "Inter") +
       theme(
         axis.title         = element_text(size = sz$axis_title, face = "bold"),
+        # Rotated 90° — its rendered length spans the full panel height, so
+        # it gets its own (potentially smaller) size to avoid clipping when
+        # vertical space is tight; overrides the general axis.title above.
+        axis.title.y       = element_text(size = axis_title_y_size, face = "bold"),
         axis.text          = element_text(size = sz$axis_text),
         panel.grid.minor   = element_blank(),
         panel.grid.major.x = element_blank(),
@@ -730,7 +746,18 @@ server <- function(input, output, session) {
         type = "multiple",
         css = "fill:#4682B4;stroke:#4682B4;"
       ),
-      ggiraph::opts_toolbar(saveaspng = FALSE)
+      # Keep the "download as png" button. Hide the lasso select/deselect
+      # icons (unused — click-to-select still works via opts_selection
+      # above) and the zoom/pan icons. Zoom is never configured (no
+      # opts_zoom(max > 1) anywhere), and per ggiraph's own docs there is no
+      # way to keep axis titles/labels pinned in view while panned/zoomed —
+      # they can scroll out of the viewport and get clipped. Since we don't
+      # use in-chart zoom, removing the tool entirely is the only way to
+      # guarantee that never happens.
+      ggiraph::opts_toolbar(
+        saveaspng = TRUE,
+        hidden = c("lasso_select", "lasso_deselect", "zoom")
+      )
     )
   }
  
@@ -1317,8 +1344,8 @@ server <- function(input, output, session) {
 
     fill_values <- demographic_fill_values(demographic, demo_levels)
 
-    # Responsive font / label sizes based on actual container width
-    sz <- responsive_text_sizes(pw)
+    # Responsive font / label sizes based on actual container width/height
+    sz <- responsive_text_sizes(pw, px_h = ph)
  
     # Convert container pixel dimensions to SVG inches (96 px/in).
     svg_w <- if (!is.null(pw) && !is.na(pw) && pw > 0) pw / 96 else 8
@@ -1575,7 +1602,7 @@ server <- function(input, output, session) {
       graph_labels = graph_labels,
       limits = limits,
       chart_type = chart_type,
-      sz = responsive_text_sizes(pw_sub),
+      sz = responsive_text_sizes(pw_sub, px_h = ph_sub),
       show_legend = !demographic_display_selection(demographic, categories_only = TRUE)
     )
     req(!is.null(p))
